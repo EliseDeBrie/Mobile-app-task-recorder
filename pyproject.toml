@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mobile-app-task-recorder"
+version = "0.1.0"
+description = "Offline evidence builder for D365 WMS mobile processes"
+authors = [{name = "D365Solutions"}]
+license = {text = "GPL-3.0"}
+requires-python = ">=3.10"
+
+dependencies = [
+    "opencv-python",
+    "python-docx",
+    "numpy",
+    "pynput",
+    "mss"
+]
+
+[project.scripts]
+whs-recorder = "whs_recorder.cli:main"
