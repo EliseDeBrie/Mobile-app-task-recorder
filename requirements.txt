@@ -1,0 +1,5 @@
+opencv-python
+python-docx
+numpy
+pynput
+mss
