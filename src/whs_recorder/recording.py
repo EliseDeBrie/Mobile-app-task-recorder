@@ -219,9 +219,21 @@ class Recording:
         }
 
     def save(self, path: str) -> str:
+        """Write the recording, all of it or none of it.
+
+        A recording is an hour of someone's afternoon. Writing to a temporary
+        file first and moving it into place means an interrupted save leaves the
+        previous version intact rather than a half-written one.
+        """
         ensure_parent_dir(path)
-        with open(path, "w", encoding="utf-8") as f:
+
+        temporary = f"{path}.saving"
+        with open(temporary, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+
         self.source_path = path
         return path
 

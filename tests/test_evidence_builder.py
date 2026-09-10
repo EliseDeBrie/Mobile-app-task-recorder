@@ -11,6 +11,7 @@ from whs_recorder.evidence_builder import EVIDENCE, TASK_GUIDE, build_evidence
 from whs_recorder.instructions import EXAMPLE
 from whs_recorder.recording import InfoStep, Recording, Step, SubtaskEnd, SubtaskStart
 from whs_recorder.redaction import RedactionConfig
+from whs_recorder.utils import read_image
 from whs_recorder.region import Region
 
 GREEN = (0, 200, 0)
@@ -54,6 +55,11 @@ def read_run(out_dir):
         return run_dir, json.load(f)
 
 
+def shot(run_dir, manifest, index, key="action_img"):
+    """The manifest names files; they live beside it."""
+    return os.path.join(run_dir, manifest["steps"][index][key])
+
+
 def doc_text(path):
     return [p.text for p in Document(path).paragraphs if p.text]
 
@@ -62,7 +68,7 @@ def test_task_guide_is_the_default_document(video, recording_path, tmp_path):
     out_dir = tmp_path / "out"
     doc = build_evidence(video=video, markers=recording_path, out_dir=str(out_dir), skip_loading=True)
 
-    assert os.path.basename(doc) == "Receive_a_purchase_order_line.docx"
+    assert os.path.basename(doc) == "Receive a purchase order line.docx"
     body = doc_text(doc)
     assert body[0] == "Receive a purchase order line"
     assert "Open the work" in body
@@ -133,12 +139,12 @@ def test_evidence_style_still_pairs_action_and_result(video, recording_path, tmp
     assert "Action:" in body
     assert "1. In the LP field, scan 'LP000123'." in body
 
-    _, manifest = read_run(str(out_dir))
+    run_dir, manifest = read_run(str(out_dir))
     step = manifest["steps"][1]
     assert step["result_toast"] == "success"
     assert step["result_mode"] == "toast"
     assert 0.8 <= step["result_offset"] <= 1.4
-    saved = cv2.imread(step["result_img"])
+    saved = read_image(os.path.join(run_dir, step["result_img"]))
     assert (saved[560:600, :, 1] > 120).mean() > 0.8
 
 
@@ -160,11 +166,10 @@ def test_redaction_is_applied_to_every_saved_screenshot(video, recording_path, t
         redaction=redaction, style=EVIDENCE,
     )
 
-    _, manifest = read_run(str(out_dir))
+    run_dir, manifest = read_run(str(out_dir))
     assert manifest["redaction"] == "1 region rule(s)"
-    images = [manifest["steps"][1]["action_img"], manifest["steps"][1]["result_img"]]
-    for path in images:
-        assert (cv2.imread(path)[0:60] < 25).all()
+    for key in ("action_img", "result_img"):
+        assert (read_image(shot(run_dir, manifest, 1, key))[0:60] < 25).all()
 
 
 def test_a_legacy_markers_file_still_builds(video, tmp_path):
@@ -250,8 +255,8 @@ def test_recorded_screenshots_are_redacted_at_build_time(recorded_screenshots, t
 
     build_evidence(markers=recorded_screenshots, out_dir=str(tmp_path / "out"), redaction=redaction)
 
-    _, manifest = read_run(str(tmp_path / "out"))
-    assert (cv2.imread(manifest["steps"][0]["action_img"])[0:60] < 25).all()
+    run_dir, manifest = read_run(str(tmp_path / "out"))
+    assert (read_image(shot(run_dir, manifest, 0))[0:60] < 25).all()
 
 
 def test_a_recording_with_neither_screenshots_nor_a_video_is_rejected(tmp_path):
@@ -286,8 +291,8 @@ def test_video_frames_are_cropped_to_the_app_region(full_screen_video, tmp_path)
 
     build_evidence(markers=str(markers), out_dir=str(tmp_path / "out"), video=full_screen_video)
 
-    _, manifest = read_run(str(tmp_path / "out"))
-    assert cv2.imread(manifest["steps"][0]["action_img"]).shape[:2] == (300, 200)
+    run_dir, manifest = read_run(str(tmp_path / "out"))
+    assert read_image(shot(run_dir, manifest, 0)).shape[:2] == (300, 200)
 
 
 def test_a_video_of_the_app_window_alone_is_left_uncropped(video, tmp_path):
@@ -299,5 +304,5 @@ def test_a_video_of_the_app_window_alone_is_left_uncropped(video, tmp_path):
 
     build_evidence(markers=str(markers), out_dir=str(tmp_path / "out"), video=video)
 
-    _, manifest = read_run(str(tmp_path / "out"))
-    assert cv2.imread(manifest["steps"][0]["action_img"]).shape[:2] == (640, 360)
+    run_dir, manifest = read_run(str(tmp_path / "out"))
+    assert read_image(shot(run_dir, manifest, 0)).shape[:2] == (640, 360)

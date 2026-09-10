@@ -171,3 +171,57 @@ def test_the_test_image_carries_the_text_it_claims():
     assert image.shape[2] == 3
     assert image.min() < 60   # dark text
     assert image.max() > 200  # on a light background
+
+
+def test_a_package_that_is_not_installed_is_named_as_missing():
+    state, _ = doctor._probe("a_package_nobody_has_installed")
+    assert state == "missing"
+
+
+def test_a_package_that_is_installed_reads_as_ok():
+    assert doctor._probe("json")[0] == "ok"
+
+
+def test_a_package_that_loads_badly_is_not_called_missing(monkeypatch):
+    """pynput is installed but raises without a desktop session. Telling someone
+    to install what they already have sends them down a dead end."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def refuse(name, *args, **kwargs):
+        if name == "pynput":
+            raise ImportError("this platform is not supported: no X connection")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", refuse)
+    monkeypatch.delitem(doctor.sys.modules, "pynput", raising=False)
+
+    state, detail = doctor._probe("pynput")
+
+    assert state == "broken"
+    assert "not supported" in detail
+
+    result = doctor._package_result("pynput", "watching taps", "pynput", "pip install --user pynput")
+    assert result.ok is False
+    assert "installed, but will not load" in result.detail
+    assert "pip install" not in result.remedy
+
+
+def test_a_package_missing_one_of_its_own_dependencies_is_reported_as_broken(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def refuse(name, *args, **kwargs):
+        if name == "pygetwindow":
+            raise ImportError("No module named 'pyrect'", name="pyrect")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", refuse)
+    monkeypatch.delitem(doctor.sys.modules, "pygetwindow", raising=False)
+
+    state, detail = doctor._probe("pygetwindow")
+
+    assert state == "broken"
+    assert "pyrect" in detail

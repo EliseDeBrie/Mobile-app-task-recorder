@@ -1,18 +1,18 @@
 import argparse
 
-import cv2
 
-from . import doctor, ocr
-from .evidence_builder import EVIDENCE, STYLES, TASK_GUIDE, build_evidence
-from .instructions import EXAMPLE, PREFERRED, VALUE_MODES
+from . import __version__, doctor, ocr
+from .evidence_builder import STYLES, TASK_GUIDE, build_evidence
+from .instructions import PREFERRED, VALUE_MODES
 from .recording import SUBTASK_START, Recording
 from .redaction import load_redaction_config
 from .region import resolve_region
-from .utils import ensure_parent_dir
+from .utils import ensure_parent_dir, read_image, write_image
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="whs-recorder")
+    p.add_argument("--version", action="version", version=f"whs-recorder {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     m = sub.add_parser("mark", help="Record a task recording (steps, subtasks, info steps)")
@@ -78,13 +78,28 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--label", action="store_true", help="Outline and name each redacted area")
     r.add_argument("--tesseract", default="", help="Path to a Tesseract binary, for text rules")
 
-    sub.add_parser("check", help="Report what this machine can do, and what is missing")
+    c = sub.add_parser("check", help="Report what this machine can do, and what is missing")
+    c.add_argument("--tesseract", default="", help="Path to a Tesseract binary to check")
+    c.add_argument("--ocr", choices=("windows", "tesseract", "none"), default="",
+                   help="Check one OCR engine rather than whichever is available")
 
     return p
 
 
 def main(argv=None):
+    """Run a command, turning an expected failure into a plain message.
+
+    A consultant on a customer machine should see what went wrong, not a stack
+    trace; anything unexpected still raises, so a real defect stays visible.
+    """
     args = build_parser().parse_args(argv)
+    try:
+        return run(args)
+    except (RuntimeError, ValueError, OSError) as exc:
+        raise SystemExit(f"Error: {exc}") from exc
+
+
+def run(args):
 
     ocr.configure(tesseract_path=getattr(args, "tesseract", ""), prefer=getattr(args, "ocr", ""))
 
@@ -171,11 +186,11 @@ def main(argv=None):
         config = load_redaction_config(args.redact)
         if config.label is False and args.label:
             config.label = True
-        image = cv2.imread(args.image)
+        image = read_image(args.image)
         if image is None:
             raise SystemExit(f"Cannot read image: {args.image}")
         ensure_parent_dir(args.out)
-        cv2.imwrite(args.out, config.apply(image))
+        write_image(args.out, config.apply(image))
         print(f"Applied {config.describe()} -> {args.out}")
         return
 

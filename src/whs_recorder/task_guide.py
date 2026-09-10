@@ -13,13 +13,13 @@ import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-import cv2
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 
 from .instructions import PREFERRED
 from .recording import INFO, STEP, SUBTASK_START, OutlineEntry, Recording
+from .utils import read_image
 
 #: Handheld screenshots are portrait, so a full-width picture is unreadable.
 PORTRAIT_WIDTH_IN = 2.9
@@ -44,7 +44,7 @@ class StepCapture:
 
 def picture_width(path: str) -> Inches:
     """Size a picture so a portrait handheld capture stays legible on the page."""
-    image = cv2.imread(path)
+    image = read_image(path)
     if image is None:
         return Inches(LANDSCAPE_WIDTH_IN)
     height, width = image.shape[:2]

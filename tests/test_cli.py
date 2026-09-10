@@ -197,3 +197,46 @@ def test_region_command_can_look_up_a_window(monkeypatch, capsys):
 
     assert asked["spec"] == "window:Warehouse"
     assert capsys.readouterr().out.strip() == "0,0,500,900"
+
+
+def test_an_expected_failure_is_a_plain_message_not_a_stack_trace(monkeypatch):
+    """A consultant on a customer machine should read what went wrong."""
+    def refuse(**kwargs):
+        raise RuntimeError("Cannot open video: run.mp4")
+
+    monkeypatch.setattr(cli, "build_evidence", refuse)
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["build", "--markers", "m.json", "--out", "o", "--video", "run.mp4"])
+
+    assert "Error: Cannot open video: run.mp4" in str(exit_info.value)
+
+
+def test_a_bad_value_is_reported_the_same_way(monkeypatch):
+    def refuse(**kwargs):
+        raise ValueError("Unknown value mode 'loud'")
+
+    monkeypatch.setattr(cli, "build_evidence", refuse)
+
+    with pytest.raises(SystemExit, match="Unknown value mode"):
+        cli.main(["build", "--markers", "m.json", "--out", "o"])
+
+
+def test_an_unexpected_failure_still_surfaces_as_itself(monkeypatch):
+    """A real defect must not be flattened into a tidy message."""
+    def explode(**kwargs):
+        raise ZeroDivisionError("division by zero")
+
+    monkeypatch.setattr(cli, "build_evidence", explode)
+
+    with pytest.raises(ZeroDivisionError):
+        cli.main(["build", "--markers", "m.json", "--out", "o"])
+
+
+def test_the_version_is_reported(capsys):
+    from whs_recorder import __version__
+
+    with pytest.raises(SystemExit):
+        cli.main(["--version"])
+
+    assert __version__ in capsys.readouterr().out

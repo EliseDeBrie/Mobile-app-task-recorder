@@ -11,11 +11,14 @@ every dialog there as a `Toplevel`, while the thread that asked for the dialog
 blocks until the answer comes back.
 """
 
+import contextlib
 import queue
 import threading
 from typing import Any, Callable, Optional
 
 PUMP_MS = 40
+START_TIMEOUT_SEC = 20.0
+WATCH_INTERVAL_SEC = 0.5
 
 
 class DialogHost:
@@ -27,15 +30,24 @@ class DialogHost:
         self._ready = threading.Event()
         self._stopping = threading.Event()
         self._root = None
+        self._failure: Optional[BaseException] = None
 
     # ---------------------------------------------------------------- lifecycle
 
     def start(self) -> "DialogHost":
+        """Start the dialog thread, or raise if its windowing toolkit is missing."""
         if self._thread is not None:
             return self
+
         self._thread = threading.Thread(target=self._run, daemon=True, name="whs-dialogs")
         self._thread.start()
-        self._ready.wait(timeout=10.0)
+
+        if not self._ready.wait(timeout=START_TIMEOUT_SEC):
+            self._thread = None
+            raise RuntimeError("The dialog thread did not start within 20 seconds.")
+        if self._failure is not None:
+            self._thread = None
+            raise RuntimeError(f"Cannot open windows: {self._failure}") from self._failure
         return self
 
     def stop(self) -> None:
@@ -56,12 +68,20 @@ class DialogHost:
         """Run `dialog(root)` on the dialog thread and wait for what it returns."""
         if self._thread is None:
             self.start()
+        if not self._thread.is_alive():
+            raise RuntimeError("The dialog thread is gone; no window can be opened.")
 
         done = threading.Event()
         box = {}
 
         self._requests.put((dialog, box, done))
-        done.wait(timeout=timeout)
+        while not done.wait(timeout=WATCH_INTERVAL_SEC if timeout is None else timeout):
+            if timeout is not None:
+                break
+            # Waiting for a person to answer takes as long as it takes, but a
+            # dialog thread that has died must not leave the caller hanging.
+            if not self._thread.is_alive():
+                raise RuntimeError("The dialog thread stopped before the window was answered.")
 
         if "error" in box:
             raise box["error"]
@@ -69,12 +89,22 @@ class DialogHost:
 
     # -------------------------------------------------------------------- inner
 
-    def _run(self) -> None:
+    def _make_root(self):
+        """The hidden window every dialog is a child of."""
         import tkinter as tk
 
-        self._root = tk.Tk()
-        self._root.withdraw()
-        self._ready.set()
+        root = tk.Tk()
+        root.withdraw()
+        return root
+
+    def _run(self) -> None:
+        try:
+            self._root = self._make_root()
+        except BaseException as exc:  # no display, no tkinter, a broken install
+            self._failure = exc
+            return
+        finally:
+            self._ready.set()
 
         def pump():
             try:
@@ -97,14 +127,18 @@ class DialogHost:
         self._root.after(PUMP_MS, pump)
         self._root.mainloop()
 
-        try:
+        with contextlib.suppress(Exception):
             self._root.destroy()
-        except Exception:
-            pass
         self._root = None
 
 
 def wait_for(root, window) -> None:
     """Pump events until `window` closes. Must run on the dialog thread."""
-    window.grab_set()
+    try:
+        # A window that is not on screen yet cannot be grabbed, and the grab is
+        # only a courtesy: dialogs are asked for one at a time regardless.
+        window.update_idletasks()
+        window.grab_set()
+    except Exception:
+        pass
     root.wait_window(window)

@@ -173,3 +173,29 @@ def test_legacy_markers_file_still_loads(tmp_path):
 
 def test_empty_recording_has_an_empty_outline():
     assert Recording().outline() == []
+
+
+def test_a_save_that_fails_leaves_the_previous_recording_intact(tmp_path, monkeypatch):
+    """An hour of someone's afternoon should not be lost to a half-written file."""
+    import json as json_module
+
+    path = tmp_path / "recording.json"
+    sample().save(str(path))
+    before = path.read_text(encoding="utf-8")
+
+    def explode(*args, **kwargs):
+        raise OSError("the disk filled up")
+
+    monkeypatch.setattr(json_module, "dump", explode)
+
+    with pytest.raises(OSError):
+        sample().save(str(path))
+
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_saving_leaves_no_temporary_file_behind(tmp_path):
+    path = tmp_path / "recording.json"
+    sample().save(str(path))
+
+    assert [p.name for p in tmp_path.iterdir()] == ["recording.json"]
