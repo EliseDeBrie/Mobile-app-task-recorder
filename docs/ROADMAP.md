@@ -1,14 +1,17 @@
 # Roadmap
 
-## v0.1
+## v0.1 — done
 - Marker recording (manual / smart)
 - Word evidence generation
 - Basic screenshot filtering
 
-## v0.2
+## v0.2 — done
 - Manual step labeling popup
-- Redaction rules
-- Improved frame selection (toast detection)
+- Redaction rules (fixed regions, plus OCR text patterns when Tesseract is present)
+- Improved frame selection (result-banner / toast detection)
+- `redact-preview` command for tuning rules against one screenshot
+- Per-run `steps.json` manifest
+- Headless test suite
 
 ## v0.3
 - Desktop UI

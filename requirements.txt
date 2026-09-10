@@ -3,3 +3,5 @@ python-docx
 numpy
 pynput
 mss
+# Optional: text-pattern redaction (also needs a Tesseract install)
+# pytesseract

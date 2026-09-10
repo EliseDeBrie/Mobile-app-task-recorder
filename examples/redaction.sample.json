@@ -1,0 +1,31 @@
+{
+  "default_mode": "box",
+  "label": false,
+  "regions": [
+    {
+      "name": "signed-in user",
+      "box": [0.0, 0.0, 1.0, 0.06],
+      "units": "relative",
+      "mode": "box"
+    },
+    {
+      "name": "worker badge",
+      "box": [0.55, 0.06, 1.0, 0.12],
+      "units": "relative",
+      "mode": "blur"
+    }
+  ],
+  "text_patterns": [
+    {
+      "name": "licence plate",
+      "pattern": "LP[0-9]{6,}",
+      "mode": "pixelate"
+    },
+    {
+      "name": "worker id",
+      "pattern": "\\b[0-9]{6}\\b",
+      "mode": "box"
+    }
+  ],
+  "ocr_min_confidence": 45
+}
