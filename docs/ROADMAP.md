@@ -22,7 +22,15 @@
 - Recorder gestures for subtasks and info steps
 - Backwards compatible with pre-v0.3 markers files
 
-## v0.4
+## v0.4 — done
+- Region capture: drag out the app window the way Greenshot does, name it by window title, or type its coordinates
+- Screenshots taken straight from the app region at each step, so a separate screen recording is optional
+- Result banner captured live, judged against the screen from before the action
+- The step popup is placed beside the app, never over it
+- Every Tk window runs on one owner thread
+- Video builds crop to the region when the recording covers the whole screen
+
+## v0.5
 - Desktop UI
 - Packaging to single .exe
 - Template customization (house styles, cover page)

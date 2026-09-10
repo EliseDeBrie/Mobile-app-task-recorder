@@ -11,13 +11,20 @@ same kind of task guide, down to how the step sentences are generated. See
 
 ## How it works
 
-1. **Mark** — run the recorder alongside your own screen capture. Every tap or
-   Enter that visibly changes the screen raises a popup asking what the action
-   was: the button or field, the value, and any title or note. It shows the
-   sentence your answers will produce.
-2. **Build** — point the builder at the recording and the video. It picks a
-   legible frame per step, applies your redaction rules, and writes the Word
-   document.
+1. **Mark** — drag a rectangle over the warehouse app window, the way Greenshot
+   and PowerPoint's screen clipping work. Every tap or Enter that visibly
+   changes that region raises a popup asking what the action was: the button or
+   field, the value, and any title or note. It shows the sentence your answers
+   will produce, and it captures the app region twice per step: at the action,
+   and again over the next couple of seconds, keeping the frame that shows the
+   result banner.
+2. **Build** — point the builder at the recording. It redacts the screenshots
+   and writes the Word document.
+
+Because the app is a window on the PC rather than a page in a browser, there is
+no tab for an extension to photograph, which is how Task Recorder gets its
+screenshots. Watching one region solves the other half of the problem too: the
+clock and the taskbar can no longer trigger steps of their own.
 
 Nothing leaves the machine. There is no telemetry and no network call.
 
@@ -38,12 +45,15 @@ whs-recorder mark --out runs/receiving/recording.json ^
 
 whs-recorder preview --markers runs/receiving/recording.json
 
-whs-recorder build --video runs/receiving/receiving.mp4 ^
-                   --markers runs/receiving/recording.json ^
+whs-recorder build --markers runs/receiving/recording.json ^
                    --out runs/receiving/guide ^
                    --redact examples/redaction.sample.json ^
                    --skip-loading
 ```
+
+`mark` opens the region selector first. To skip the drag, name the window with
+`--region "window:Warehouse"` (needs `pip install .[window]`), give coordinates
+with `--region 220,140,360,640`, or watch the whole screen with `--region full`.
 
 While recording: `Ctrl+Shift+S` starts a subtask, `Ctrl+Shift+E` ends it,
 `Ctrl+Shift+I` adds an info step, `Ctrl+Shift+End` stops and saves. More recipes
@@ -64,6 +74,17 @@ action and the control rather than from free text:
 `--values example` switches every field step to "enter a value" wording, for a
 guide that should not carry your test data. A step can also override its own
 sentence. The label table lives in `instructions.py`.
+
+## Screenshots
+
+The recorder captures the app region itself, so a separate screen recording is
+optional. Captures are PNG, straight from the screen, with none of the softening
+a video codec introduces.
+
+If you would rather record video anyway — a process too fast to interrupt with
+popups, or evidence that has to show real time — pass `--no-screenshots` while
+recording and `--video` when building. The builder then selects a frame per step
+from the video, and crops it to the region if the video covers the whole screen.
 
 ## Documents
 

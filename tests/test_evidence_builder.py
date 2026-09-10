@@ -11,6 +11,7 @@ from whs_recorder.evidence_builder import EVIDENCE, TASK_GUIDE, build_evidence
 from whs_recorder.instructions import EXAMPLE
 from whs_recorder.recording import InfoStep, Recording, Step, SubtaskEnd, SubtaskStart
 from whs_recorder.redaction import RedactionConfig
+from whs_recorder.region import Region
 
 GREEN = (0, 200, 0)
 
@@ -195,3 +196,106 @@ def test_unknown_style_and_value_mode_are_rejected(video, recording_path, tmp_pa
 
     with pytest.raises(ValueError, match="Unknown value mode"):
         build_evidence(video=video, markers=recording_path, out_dir=str(tmp_path / "o"), value_mode="loud")
+
+
+@pytest.fixture
+def recorded_screenshots(tmp_path):
+    """A recording that carries its own screenshots, as `mark` now writes them."""
+    shots = tmp_path / "receiving_screenshots"
+    shots.mkdir()
+    cv2.imwrite(str(shots / "step_01_action.png"), make_screen(seed=3))
+    cv2.imwrite(str(shots / "step_01_result.png"), add_banner(make_screen(seed=4), GREEN))
+    cv2.imwrite(str(shots / "step_02_action.png"), make_screen(seed=5))
+
+    r = Recording(name="Receive a purchase order line", region=Region(100, 80, 360, 640, "select"))
+    r.add(Step(t=1.5, action="scan", control="LP", value="LP000123",
+               action_img="receiving_screenshots/step_01_action.png",
+               result_img="receiving_screenshots/step_01_result.png",
+               result_toast="success"))
+    r.add(Step(t=3.0, action="tap", control="OK",
+               action_img="receiving_screenshots/step_02_action.png"))
+    path = tmp_path / "receiving.json"
+    r.save(str(path))
+    return str(path)
+
+
+def test_a_recording_with_its_own_screenshots_needs_no_video(recorded_screenshots, tmp_path):
+    doc = build_evidence(markers=recorded_screenshots, out_dir=str(tmp_path / "out"))
+
+    assert "1. In the LP field, scan 'LP000123'." in doc_text(doc)
+    assert len(Document(doc).inline_shapes) == 2
+
+    _, manifest = read_run(str(tmp_path / "out"))
+    assert manifest["video"] == ""
+    assert manifest["region"] == "360x640 at 100,80 (select)"
+    assert manifest["steps"][0]["action_img"].endswith("step_01_action.jpg")
+
+
+def test_the_recorded_result_banner_keeps_its_caption(recorded_screenshots, tmp_path):
+    doc = build_evidence(
+        markers=recorded_screenshots, out_dir=str(tmp_path / "out"), include_result=True
+    )
+
+    assert "Result (success message detected):" in doc_text(doc)
+
+    _, manifest = read_run(str(tmp_path / "out"))
+    assert manifest["steps"][0]["result_toast"] == "success"
+    assert manifest["steps"][0]["result_mode"] == "recorded"
+
+
+def test_recorded_screenshots_are_redacted_at_build_time(recorded_screenshots, tmp_path):
+    redaction = RedactionConfig.from_dict({"regions": [{"name": "user", "box": [0.0, 0.0, 1.0, 0.1]}]})
+
+    build_evidence(markers=recorded_screenshots, out_dir=str(tmp_path / "out"), redaction=redaction)
+
+    _, manifest = read_run(str(tmp_path / "out"))
+    assert (cv2.imread(manifest["steps"][0]["action_img"])[0:60] < 25).all()
+
+
+def test_a_recording_with_neither_screenshots_nor_a_video_is_rejected(tmp_path):
+    r = Recording(name="Empty handed")
+    r.add(Step(t=1.0, action="tap", control="OK"))
+    path = tmp_path / "recording.json"
+    r.save(str(path))
+
+    with pytest.raises(RuntimeError, match="--video"):
+        build_evidence(markers=str(path), out_dir=str(tmp_path / "out"))
+
+
+@pytest.fixture
+def full_screen_video(tmp_path):
+    """A screen recording of a whole 800x600 desktop, with the app in one corner."""
+    path = tmp_path / "desktop.mp4"
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (800, 600))
+    if not writer.isOpened():
+        pytest.skip("No video writer available in this environment")
+    for i in range(40):
+        frame = make_screen(width=800, height=600, seed=i)
+        writer.write(frame)
+    writer.release()
+    return str(path)
+
+
+def test_video_frames_are_cropped_to_the_app_region(full_screen_video, tmp_path):
+    r = Recording(name="Cropped", region=Region(100, 80, 200, 300, "select"))
+    r.add(Step(t=1.5, action="tap", control="OK"))
+    markers = tmp_path / "recording.json"
+    r.save(str(markers))
+
+    build_evidence(markers=str(markers), out_dir=str(tmp_path / "out"), video=full_screen_video)
+
+    _, manifest = read_run(str(tmp_path / "out"))
+    assert cv2.imread(manifest["steps"][0]["action_img"]).shape[:2] == (300, 200)
+
+
+def test_a_video_of_the_app_window_alone_is_left_uncropped(video, tmp_path):
+    """The 360x640 video already shows only the app, so the region must not crop it again."""
+    r = Recording(name="Not cropped", region=Region(0, 0, 360, 640, "select"))
+    r.add(Step(t=1.5, action="tap", control="OK"))
+    markers = tmp_path / "recording.json"
+    r.save(str(markers))
+
+    build_evidence(markers=str(markers), out_dir=str(tmp_path / "out"), video=video)
+
+    _, manifest = read_run(str(tmp_path / "out"))
+    assert cv2.imread(manifest["steps"][0]["action_img"]).shape[:2] == (640, 360)

@@ -5,3 +5,5 @@ pynput
 mss
 # Optional: text-pattern redaction (also needs a Tesseract install)
 # pytesseract
+# Optional: pick the app by window title instead of dragging a region
+# pygetwindow

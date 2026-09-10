@@ -17,10 +17,12 @@ This module reads and writes that model as JSON, and still loads the flat
 """
 
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Union
 
 from .instructions import PREFERRED, render_instruction
+from .region import Region
 from .utils import ensure_parent_dir
 
 FORMAT = "whs-task-recording"
@@ -48,6 +50,11 @@ class Step:
     is_loading: bool = False
     reason: str = ""
     diff: float = 0.0
+
+    #: Screenshots captured while recording, relative to the recording file.
+    action_img: str = ""
+    result_img: str = ""
+    result_toast: str = ""
 
     type: str = STEP
 
@@ -124,7 +131,23 @@ class Recording:
     start_epoch: float = 0.0
     monitor_index: int = 1
     diff_threshold: float = 7.5
+    region: Optional[Region] = None
     nodes: List[Node] = field(default_factory=list)
+
+    #: Where the file was read from or written to. Not part of the JSON.
+    source_path: str = ""
+
+    def image_path(self, relative: str) -> str:
+        """Resolve a screenshot path recorded relative to the recording file."""
+        if not relative:
+            return ""
+        if os.path.isabs(relative) or not self.source_path:
+            return relative
+        return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(self.source_path)), relative))
+
+    @property
+    def has_screenshots(self) -> bool:
+        return any(step.action_img for step in self.steps)
 
     # ------------------------------------------------------------------ nodes
 
@@ -189,6 +212,7 @@ class Recording:
             "start_epoch": self.start_epoch,
             "monitor_index": self.monitor_index,
             "diff_threshold": self.diff_threshold,
+            "region": self.region.to_dict() if self.region else None,
             "nodes": [_node_to_dict(n) for n in self.nodes],
         }
 
@@ -196,6 +220,7 @@ class Recording:
         ensure_parent_dir(path)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
+        self.source_path = path
         return path
 
     @staticmethod
@@ -209,6 +234,7 @@ class Recording:
             start_epoch=float(data.get("start_epoch", 0.0)),
             monitor_index=int(data.get("monitor_index", 1)),
             diff_threshold=float(data.get("diff_threshold", 7.5)),
+            region=Region.from_dict(data.get("region")),
         )
         recording.nodes = [_node_from_dict(n) for n in data.get("nodes", [])]
         return recording
@@ -216,7 +242,9 @@ class Recording:
     @staticmethod
     def load(path: str) -> "Recording":
         with open(path, "r", encoding="utf-8") as f:
-            return Recording.from_dict(json.load(f))
+            recording = Recording.from_dict(json.load(f))
+        recording.source_path = path
+        return recording
 
 
 def _node_to_dict(node: Node) -> Dict[str, Any]:
