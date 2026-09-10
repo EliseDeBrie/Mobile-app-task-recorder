@@ -1,17 +1,31 @@
+"""Turn a recording plus a screen capture into a Word document.
+
+The recording says what happened and in what order; the video supplies the
+pixels. For each recorded step the builder picks the action frame, looks for the
+frame that shows the result banner, applies the redaction rules, and hands the
+lot to one of the writers in `task_guide`.
+"""
+
 import os
 import json
 import datetime
-from typing import List, Optional
+import re
+from typing import Dict, List, Optional
 
 import cv2
-from docx import Document
-from docx.shared import Inches
 
 from .frame_select import FrameChoice, choose_frame, choose_result_frame
+from .instructions import PREFERRED, VALUE_MODES
+from .recording import STEP, Recording
 from .redaction import RedactionConfig
+from .task_guide import StepCapture, write_evidence_document, write_task_guide
 from .utils import ensure_dir
 
 JPEG_PARAMS = [int(cv2.IMWRITE_JPEG_QUALITY), 92]
+
+TASK_GUIDE = "task-guide"
+EVIDENCE = "evidence"
+STYLES = (TASK_GUIDE, EVIDENCE)
 
 TOAST_CAPTION = {
     "success": "Result (success message detected):",
@@ -20,11 +34,12 @@ TOAST_CAPTION = {
 }
 
 
-def _write_capture(
-    frame,
-    path: str,
-    redaction: Optional[RedactionConfig],
-) -> str:
+def _slug(name: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", (name or "").strip()).strip("_")
+    return slug or "Task_guide"
+
+
+def _write_capture(frame, path: str, redaction: Optional[RedactionConfig]) -> str:
     if redaction is not None:
         frame = redaction.apply(frame)
     cv2.imwrite(path, frame, JPEG_PARAMS)
@@ -41,34 +56,36 @@ def build_evidence(
     video: str,
     markers: str,
     out_dir: str,
-    title: str = "WHS Mobile – Test Evidence",
+    title: str = None,
     skip_loading: bool = True,
     result_offsets: List[float] = None,
     redaction: Optional[RedactionConfig] = None,
     result_window: float = 2.5,
     detect_toast: bool = True,
+    style: str = TASK_GUIDE,
+    value_mode: str = PREFERRED,
+    include_result: bool = False,
 ):
-    """
-    Builds a Word doc from:
-      - MP4 screen recording
-      - step_markers.json with title/notes/is_loading
+    """Build a Word document from a recording and its screen capture.
 
-    For each marker:
-      - capture 1 "action" screenshot around marker time
-      - capture 1 "result" screenshot after the marker, preferring a frame that
-        shows a result banner (toast) when `detect_toast` is on
-      - apply the redaction rules, if any, before anything is written to disk
+    `style` picks the layout: `task-guide` reproduces what D365 Task Recorder
+    exports, `evidence` keeps the action/result pairing this tool started with.
+    `value_mode` chooses between the recorded values and "enter a value" wording,
+    as Task Recorder's preferred and example value labels do.
     """
+    if style not in STYLES:
+        raise ValueError(f"Unknown style {style!r} (expected one of {', '.join(STYLES)})")
+    if value_mode not in VALUE_MODES:
+        raise ValueError(f"Unknown value mode {value_mode!r} (expected one of {', '.join(VALUE_MODES)})")
     if result_offsets is None:
         result_offsets = [0.6, 1.2]
 
     ensure_dir(out_dir)
 
-    with open(markers, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    ms = data.get("markers", [])
-    if not ms:
-        raise RuntimeError("No markers found.")
+    recording = Recording.load(markers)
+    outline = recording.outline(skip_loading=skip_loading)
+    if not outline:
+        raise RuntimeError("No steps found.")
 
     cap = cv2.VideoCapture(video)
     if not cap.isOpened():
@@ -77,110 +94,150 @@ def build_evidence(
     fps = cap.get(cv2.CAP_PROP_FPS) or 10.0
 
     run_stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_out = os.path.join(out_dir, f"evidence_{run_stamp}")
+    run_out = os.path.join(out_dir, f"run_{run_stamp}")
     ensure_dir(run_out)
 
+    redaction_summary = redaction.describe() if redaction is not None else "none"
     if redaction is not None and not redaction.is_empty():
         print(f"Redaction active: {redaction.describe()}")
 
-    captures = []  # list of dicts per step
+    want_result = style == EVIDENCE or include_result
+    captures: Dict[int, StepCapture] = {}
 
-    step_no = 0
-    for m in ms:
-        if skip_loading and m.get("is_loading") is True:
+    for entry in outline:
+        if entry.kind != STEP:
             continue
 
-        step_no += 1
-        t = float(m.get("t", 0.0))
-        step_title = (m.get("title") or f"Step {step_no}").strip()
-        notes = (m.get("notes") or "").strip()
+        step = entry.node
+        capture = StepCapture(node_index=entry.node_index, t=step.t)
 
-        # ACTION frame near marker
-        action = choose_frame(cap, fps, t)
-        action_path = None
+        action = choose_frame(cap, fps, step.t)
+        capture.action_mode = action.mode
         if action.frame is not None:
-            action_path = _write_capture(
+            capture.action_img = _write_capture(
                 action.frame,
-                os.path.join(run_out, f"step_{step_no:02d}_action_{action.mode}.jpg"),
+                os.path.join(run_out, f"step_{entry.number:02d}_action_{action.mode}.jpg"),
                 redaction,
             )
 
-        # RESULT frame AFTER marker (to catch the toast / success message)
-        result = choose_result_frame(
-            cap,
-            fps,
-            t,
-            baseline=action.frame,
-            offsets=result_offsets,
-            window_sec=result_window,
-            use_toast_detection=detect_toast,
-        )
+        if want_result:
+            result = choose_result_frame(
+                cap,
+                fps,
+                step.t,
+                baseline=action.frame,
+                offsets=result_offsets,
+                window_sec=result_window,
+                use_toast_detection=detect_toast,
+            )
+            capture.result_mode = result.mode
+            capture.result_offset = result.offset
+            capture.result_toast = result.toast.family if result.has_toast else None
+            capture.result_caption = _result_caption(result)
+            if result.frame is not None:
+                name = f"step_{entry.number:02d}_result_{result.mode}_plus{result.offset:.1f}s.jpg"
+                capture.result_img = _write_capture(result.frame, os.path.join(run_out, name), redaction)
 
-        result_path = None
-        if result.frame is not None:
-            name = f"step_{step_no:02d}_result_{result.mode}_plus{result.offset:.1f}s.jpg"
-            result_path = _write_capture(result.frame, os.path.join(run_out, name), redaction)
-
-        captures.append({
-            "no": step_no,
-            "t": t,
-            "title": step_title,
-            "notes": notes,
-            "action_img": action_path,
-            "result_img": result_path,
-            "result_mode": result.mode,
-            "result_offset": result.offset,
-            "result_toast": result.toast.family if result.has_toast else None,
-            "result_caption": _result_caption(result),
-        })
+        captures[entry.node_index] = capture
 
     cap.release()
 
-    # Build Word doc
-    doc = Document()
-    doc.add_heading(title, level=1)
-    doc.add_paragraph(f"Video: {os.path.basename(video)}")
-    doc.add_paragraph(f"Markers: {os.path.basename(markers)}")
-    doc.add_paragraph("Per step: action screenshot + result screenshot (after marker) when available.")
-    if redaction is not None and not redaction.is_empty():
-        doc.add_paragraph(f"Redaction applied to every screenshot: {redaction.describe()}.")
+    if style == TASK_GUIDE:
+        out_doc = os.path.join(run_out, f"{_slug(title or recording.name)}.docx")
+        write_task_guide(
+            recording,
+            outline,
+            captures,
+            out_doc,
+            value_mode=value_mode,
+            title=title,
+            include_result=include_result,
+        )
+    else:
+        out_doc = os.path.join(run_out, "WHS_Test_Evidence.docx")
+        write_evidence_document(
+            recording,
+            outline,
+            captures,
+            out_doc,
+            value_mode=value_mode,
+            title=title,
+            video=video,
+            markers=markers,
+            redaction_summary=redaction_summary,
+        )
 
-    doc.add_heading("Steps", level=2)
+    _write_manifest(
+        os.path.join(run_out, "steps.json"),
+        recording=recording,
+        outline=outline,
+        captures=captures,
+        video=video,
+        markers=markers,
+        run_stamp=run_stamp,
+        redaction_summary=redaction_summary,
+        detect_toast=detect_toast,
+        style=style,
+        value_mode=value_mode,
+        document=out_doc,
+    )
 
-    for c in captures:
-        doc.add_heading(f"{c['no']}. {c['title']}", level=3)
-        doc.add_paragraph(f"(Marker ~{c['t']:.1f}s)")
-        if c["notes"]:
-            doc.add_paragraph(c["notes"])
+    steps = sum(1 for e in outline if e.kind == STEP)
+    if want_result:
+        toasts = sum(1 for c in captures.values() if c.result_toast)
+        print(f"Captured {steps} step(s); result message detected on {toasts}.")
+    else:
+        print(f"Captured {steps} step(s).")
+    print("Created:", out_doc)
+    return out_doc
 
-        if c["action_img"]:
-            doc.add_paragraph("Action:")
-            doc.add_picture(c["action_img"], width=Inches(6.3))
 
-        if c["result_img"]:
-            doc.add_paragraph(c["result_caption"])
-            doc.add_picture(c["result_img"], width=Inches(6.3))
+def _write_manifest(path: str, recording, outline, captures, video, markers, run_stamp,
+                    redaction_summary, detect_toast, style, value_mode, document) -> str:
+    steps = []
+    for entry in outline:
+        capture = captures.get(entry.node_index)
+        record = {
+            "no": entry.number,
+            "kind": entry.kind,
+            "depth": entry.depth,
+            "instruction": getattr(entry.node, "instruction", lambda mode: "")(value_mode),
+            "title": getattr(entry.node, "title", ""),
+            "note": getattr(entry.node, "note", ""),
+        }
+        if entry.kind == "subtask_start":
+            record = {"no": None, "kind": entry.kind, "depth": entry.depth, "name": entry.node.name}
+        elif capture is not None:
+            record.update({
+                "t": capture.t,
+                "action": getattr(entry.node, "action", ""),
+                "control": getattr(entry.node, "control", ""),
+                "action_img": capture.action_img,
+                "result_img": capture.result_img,
+                "result_mode": capture.result_mode,
+                "result_offset": capture.result_offset,
+                "result_toast": capture.result_toast,
+                "result_caption": capture.result_caption,
+            })
+        steps.append(record)
 
-    out_doc = os.path.join(run_out, "WHS_Test_Evidence.docx")
-    doc.save(out_doc)
-
-    manifest = os.path.join(run_out, "steps.json")
-    with open(manifest, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(
             {
+                "recording": recording.name,
+                "description": recording.description,
                 "video": os.path.basename(video),
                 "markers": os.path.basename(markers),
                 "generated": run_stamp,
-                "redaction": redaction.describe() if redaction is not None else "none",
+                "document": os.path.basename(document),
+                "style": style,
+                "value_mode": value_mode,
+                "redaction": redaction_summary,
                 "toast_detection": detect_toast,
-                "steps": captures,
+                "steps": steps,
             },
             f,
             indent=2,
             ensure_ascii=False,
         )
-
-    toasts = sum(1 for c in captures if c["result_toast"])
-    print(f"Captured {len(captures)} step(s); result message detected on {toasts}.")
-    print("Created:", out_doc)
-    return out_doc
+    return path

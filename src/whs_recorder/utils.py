@@ -65,3 +65,18 @@ def iter_frames(cap, start_index: int, end_index: int):
             return
         yield index, frame
         index += 1
+
+
+def is_letter_key(key, letter: str) -> bool:
+    """True when a pynput key is the given letter, modifier applied or not.
+
+    Ctrl+S arrives as the control character \x13 rather than "s" on some
+    platforms, and as a virtual key code on others.
+    """
+    char = getattr(key, "char", None)
+    if char:
+        if char.lower() == letter:
+            return True
+        if len(char) == 1 and ord(char) == ord(letter) - 96:  # Ctrl+letter
+            return True
+    return getattr(key, "vk", None) == ord(letter.upper())

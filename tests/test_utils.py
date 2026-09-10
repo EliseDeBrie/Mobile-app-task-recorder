@@ -53,3 +53,43 @@ def test_mean_abs_diff_is_zero_for_identical_frames():
     screen = make_screen()
     assert mean_abs_diff(screen, screen) == 0.0
     assert mean_abs_diff(screen, np.zeros_like(screen)) > 0
+
+
+class FakeKey:
+    """Stands in for a pynput key object."""
+
+    def __init__(self, char=None, vk=None):
+        if char is not None:
+            self.char = char
+        if vk is not None:
+            self.vk = vk
+
+
+def test_is_letter_key_matches_a_plain_letter():
+    from whs_recorder.utils import is_letter_key
+
+    assert is_letter_key(FakeKey(char="s"), "s")
+    assert is_letter_key(FakeKey(char="S"), "s")
+    assert not is_letter_key(FakeKey(char="e"), "s")
+
+
+def test_is_letter_key_matches_the_control_character():
+    """Ctrl+S arrives as \\x13 on some platforms."""
+    from whs_recorder.utils import is_letter_key
+
+    assert is_letter_key(FakeKey(char="\x13"), "s")
+    assert is_letter_key(FakeKey(char="\x05"), "e")
+    assert not is_letter_key(FakeKey(char="\x13"), "e")
+
+
+def test_is_letter_key_matches_the_virtual_key_code():
+    from whs_recorder.utils import is_letter_key
+
+    assert is_letter_key(FakeKey(vk=ord("S")), "s")
+    assert not is_letter_key(FakeKey(vk=ord("E")), "s")
+
+
+def test_is_letter_key_ignores_a_key_with_neither():
+    from whs_recorder.utils import is_letter_key
+
+    assert not is_letter_key(FakeKey(), "s")
