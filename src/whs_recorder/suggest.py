@@ -50,11 +50,11 @@ def _usable(line: TextLine) -> bool:
 def screen_title(lines: Sequence[TextLine], height: int, band: float = TITLE_BAND) -> str:
     """The most prominent line in the title band at the top of the screen."""
     band_px = max(int(height * band), 1)
-    candidates = [l for l in lines if l.top < band_px and _usable(l)]
+    candidates = [text_line for text_line in lines if text_line.top < band_px and _usable(text_line)]
     if not candidates:
         return ""
     # A title is the biggest text up there; ties go to the highest line.
-    best = max(candidates, key=lambda l: (l.height, -l.top))
+    best = max(candidates, key=lambda text_line: (text_line.height, -text_line.top))
     return clean(best.text)
 
 
@@ -68,7 +68,7 @@ def control_at(
     if point is None:
         return ""
 
-    usable = [l for l in lines if _usable(l) and clean(l.text) != skip]
+    usable = [text_line for text_line in lines if _usable(text_line) and clean(text_line.text) != skip]
     if not usable:
         return ""
 
@@ -82,16 +82,16 @@ def control_at(
     # span missed every wide field; ignoring position entirely let empty space
     # claim the nearest button.
     above = [
-        l for l in usable
-        if l.bottom <= y and y - l.bottom <= near and x >= l.left - near
+        text_line for text_line in usable
+        if text_line.bottom <= y and y - text_line.bottom <= near and x >= text_line.left - near
     ]
     if above:
-        return clean(min(above, key=lambda l: y - l.bottom).text)
+        return clean(min(above, key=lambda text_line: y - text_line.bottom).text)
 
     # Otherwise the text under the finger: a button carries its own label.
-    hits = [l for l in usable if l.contains(point)]
+    hits = [text_line for text_line in usable if text_line.contains(point)]
     if hits:
-        return clean(min(hits, key=lambda l: l.width * l.height).text)
+        return clean(min(hits, key=lambda text_line: text_line.width * text_line.height).text)
 
     # Nothing close enough. An empty box beats a wrong guess the reader has to
     # notice and undo.
@@ -110,12 +110,12 @@ def value_appeared(
     Only text near the tap counts. Plenty else changes at the same moment - a
     result banner most of all - and none of it is the value that was entered.
     """
-    previous = {clean(l.text) for l in before}
+    previous = {clean(text_line.text) for text_line in before}
     skipped = {s for s in skip if s}
 
     fresh = [
-        l for l in after
-        if _usable(l) and clean(l.text) not in previous and clean(l.text) not in skipped
+        text_line for text_line in after
+        if _usable(text_line) and clean(text_line.text) not in previous and clean(text_line.text) not in skipped
     ]
     if not fresh:
         return ""
@@ -124,11 +124,11 @@ def value_appeared(
         return clean(fresh[0].text)
 
     x, y = point
-    near_tap = [l for l in fresh if abs(l.centre[1] - y) <= within]
+    near_tap = [text_line for text_line in fresh if abs(text_line.centre[1] - y) <= within]
     if not near_tap:
         return ""
 
-    near_tap.sort(key=lambda l: abs(l.centre[1] - y) + abs(l.centre[0] - x) / 4)
+    near_tap.sort(key=lambda text_line: abs(text_line.centre[1] - y) + abs(text_line.centre[0] - x) / 4)
     return clean(near_tap[0].text)
 
 

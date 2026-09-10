@@ -41,7 +41,7 @@ from .recording import InfoStep, Recording, Step, SubtaskEnd, SubtaskStart
 from .redaction import RedactionConfig
 from .region import Region, open_capture, popup_position, virtual_screen
 from .suggest import Suggestion, suggest_step
-from .utils import ensure_dir, ensure_parent_dir, is_letter_key, mean_abs_diff
+from .utils import ensure_dir, ensure_parent_dir, is_letter_key, mean_abs_diff, write_image
 
 DEFAULT_ACTION_LABEL = ACTION_CHOICES[0][0]
 
@@ -320,17 +320,30 @@ def run_marker_recorder(
     dialog_open = False
     lock = threading.Lock()
 
-    sct = open_capture()
-    if region is not None:
-        monitor = region.to_monitor()
-    else:
-        monitor = sct.monitors[monitor_index] if monitor_index else sct.monitors[0]
+    # A capture session belongs to the thread that made it, so each thread gets
+    # its own. Steps are detected on timer threads and the result is watched on
+    # another, and sharing one session across them returns torn or blank frames.
+    captures = threading.local()
+
+    def capture_session():
+        session = getattr(captures, "session", None)
+        if session is None:
+            session = open_capture()
+            captures.session = session
+        return session
+
+    with open_capture() as probe:
+        monitors = probe.monitors
+        monitor = (
+            region.to_monitor() if region is not None
+            else (monitors[monitor_index] if monitor_index else monitors[0])
+        )
 
     screen = virtual_screen()
     popup_at = popup_position(region, screen)
 
     def grab_frame():
-        return np.array(sct.grab(monitor))[:, :, :3]
+        return np.array(capture_session().grab(monitor))[:, :, :3]
 
     def grab_signature(frame=None):
         gray = cv2.cvtColor(grab_frame() if frame is None else frame, cv2.COLOR_BGR2GRAY)
@@ -341,7 +354,7 @@ def run_marker_recorder(
             return ""
         if redaction is not None:
             frame = redaction.apply(frame)
-        cv2.imwrite(os.path.join(shots_dir, filename), frame)
+        write_image(os.path.join(shots_dir, filename), frame)
         return f"{shots_name}/{filename}"
 
     last_frame = grab_frame()
@@ -363,9 +376,16 @@ def run_marker_recorder(
         with lock:
             dialog_open = False
 
-    def save_recording():
-        recording.save(out_path)
-        print(f"Saved {len(recording.steps)} step(s) to: {out_path}")
+    def save_recording(announce: bool = True):
+        """Write the recording out. Called after every step, not only at the end,
+        so a crash or a lost session costs the current step at most."""
+        try:
+            recording.save(out_path)
+        except OSError as exc:
+            print(f"Could not save the recording: {exc}")
+            return
+        if announce:
+            print(f"Saved {len(recording.steps)} step(s) to: {out_path}")
 
     def region_point(click: Optional[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
         """Put a screen click into the captured region's own coordinates."""
@@ -413,10 +433,10 @@ def run_marker_recorder(
         result_holder = {}
 
         def watch_result():
-            # Its own capture session: one is not safe to share across threads.
-            with open_capture() as thread_sct:
+            # Its own session, per the note above.
+            with open_capture() as thread_session:
                 result_holder["frame"], result_holder["toast"] = _capture_result(
-                    lambda: np.array(thread_sct.grab(monitor))[:, :, :3],
+                    lambda: np.array(thread_session.grab(monitor))[:, :, :3],
                     before_frame,
                     result_window,
                     stop_result,
@@ -465,6 +485,7 @@ def run_marker_recorder(
             last_frame = grab_frame()
             last_sig = grab_signature(last_frame)
             recording.add(step)
+            save_recording(announce=False)
             print(f"Step {len(recording.steps)}: {step.instruction(PREFERRED)}")
         finally:
             release_dialog()
@@ -479,6 +500,7 @@ def run_marker_recorder(
 
     def start_subtask():
         if not claim_dialog():
+            print("Finish the open step first, then start the subtask.")
             return
         try:
             subtask_name = dialogs.ask(
@@ -488,6 +510,7 @@ def run_marker_recorder(
             release_dialog()
         if subtask_name:
             recording.add(SubtaskStart(t=round(elapsed(), 3), name=subtask_name))
+            save_recording(announce=False)
             print(f"Subtask started: {subtask_name}")
 
     def end_subtask():
@@ -495,10 +518,12 @@ def run_marker_recorder(
             print("No subtask is open.")
             return
         recording.add(SubtaskEnd(t=round(elapsed(), 3)))
+        save_recording(announce=False)
         print("Subtask ended.")
 
     def add_info_step():
         if not claim_dialog():
+            print("Finish the open step first, then add the info step.")
             return
         try:
             text = dialogs.ask(
@@ -508,6 +533,7 @@ def run_marker_recorder(
             release_dialog()
         if text:
             recording.add(InfoStep(t=round(elapsed(), 3), text=text))
+            save_recording(announce=False)
             print(f"Info step: {text}")
 
     def on_click(x, y, button, is_pressed):
@@ -522,22 +548,24 @@ def run_marker_recorder(
         ctrl = keyboard.Key.ctrl_l in pressed or keyboard.Key.ctrl_r in pressed
         shift = keyboard.Key.shift_l in pressed or keyboard.Key.shift_r in pressed
 
+        # pynput stops the listener when a handler returns False; None carries on.
         if ctrl and shift:
             if key == keyboard.Key.end:
                 print("Stopping.")
                 return False
             if is_letter_key(key, "s"):
                 threading.Thread(target=start_subtask, daemon=True).start()
-                return
+                return None
             if is_letter_key(key, "e"):
                 end_subtask()
-                return
+                return None
             if is_letter_key(key, "i"):
                 threading.Thread(target=add_info_step, daemon=True).start()
-                return
+                return None
 
         if key == keyboard.Key.enter:
             schedule_check("enter")
+        return None
 
     def on_key_release(key):
         if key in pressed:
@@ -556,7 +584,7 @@ def run_marker_recorder(
             if ocr_module.available():
                 print("Reading the screen to fill the popup in for you.")
             else:
-                print("Install .[ocr] to have the screen, control and value filled in for you.")
+                print("No OCR engine, so the popup opens blank. Run 'whs-recorder check' to see why.")
         if redaction is not None and not redaction.is_empty():
             print(f"Redaction active while recording: {redaction.describe()}")
     else:

@@ -14,12 +14,13 @@ With neither, everything here returns nothing and says so once, so the features
 built on it go quiet rather than failing.
 """
 
+import contextlib
 import os
 import shutil
 import sys
 import time
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Tuple
 
 import cv2
 
@@ -131,10 +132,9 @@ def windows_engine(modules=None):
         system = modules["system"]
         init = getattr(system, "init_apartment", None)
         if init is not None:
-            try:
+            # Already initialised for this thread is not an error.
+            with contextlib.suppress(Exception):
                 init(system.MTA)
-            except Exception:
-                pass  # already initialised for this thread
         return modules["ocr"].OcrEngine.try_create_from_user_profile_languages()
     except Exception:
         return None

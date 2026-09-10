@@ -15,7 +15,7 @@ and no network call in any code path.
 | the recording JSON | `whs-recorder mark` | Timestamps, the screen, action, control and value of each step, your titles and notes, the screen region being watched, and the screen-change score. No pixels. |
 | `<recording>_screenshots/*.png` | `whs-recorder mark` | The screenshots captured from the app region as you record. |
 | `run_<stamp>/step_*.jpg` | `whs-recorder build` | The screenshots, after redaction. |
-| `run_<stamp>/steps.json` | `whs-recorder build` | The per-step manifest: generated instructions, titles, notes, image paths, which rules were applied. |
+| `run_<stamp>/steps.json` | `whs-recorder build` | The per-step manifest: generated instructions, titles, notes, the screenshot file names, which rules were applied. |
 | `run_<stamp>/<recording name>.docx` | `whs-recorder build` | The document, with the redacted screenshots embedded. |
 
 The values you scan and type are part of the recording, and the generated steps

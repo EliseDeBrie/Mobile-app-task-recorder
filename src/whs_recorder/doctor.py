@@ -51,12 +51,30 @@ class CheckResult:
     optional: bool = False
 
 
-def _import_ok(module: str) -> bool:
+def _probe(module: str):
+    """Whether a package can be used here: ("ok" | "missing" | "broken", detail).
+
+    A package that is installed but refuses to load is a different problem from
+    one that was never installed, and telling someone to install what they
+    already have sends them down a dead end. pynput, for one, raises an
+    ImportError when there is no desktop session, though it is sitting right
+    there.
+    """
     try:
         __import__(module)
-        return True
-    except Exception:
-        return False
+        return "ok", ""
+    except ImportError as exc:
+        detail = str(exc).strip().splitlines()[0]
+        missing = getattr(exc, "name", None)
+        if missing is None or missing == module or missing.startswith(f"{module}."):
+            if missing is None and detail and module not in detail:
+                # An ImportError with no module name, raised by the package
+                # itself: it is installed, and unhappy about something else.
+                return "broken", detail
+            return "missing", detail
+        return "broken", f"{detail} (it needs {missing})"
+    except Exception as exc:
+        return "broken", str(exc).strip().splitlines()[0]
 
 
 def check_python() -> CheckResult:
@@ -84,25 +102,29 @@ def check_python() -> CheckResult:
 def check_packages() -> List[CheckResult]:
     results = []
     for module, purpose, name, remedy in PACKAGES:
-        ok = _import_ok(module)
         if module == "tkinter":
             remedy = _tkinter_remedy()
-        results.append(
-            CheckResult(
-                name, ok,
-                purpose if ok else f"missing, needed for {purpose}",
-                "" if ok else remedy,
-            )
-        )
+        results.append(_package_result(module, purpose, name, remedy))
     for module, purpose, name, remedy in OPTIONAL_PACKAGES:
-        ok = _import_ok(module)
-        results.append(
-            CheckResult(
-                name, ok, purpose if ok else f"not installed; only needed for {purpose}",
-                "" if ok else remedy, optional=True,
-            )
-        )
+        result = _package_result(module, purpose, name, remedy, optional=True)
+        results.append(result)
     return results
+
+
+def _package_result(module, purpose, name, remedy, optional=False) -> CheckResult:
+    state, detail = _probe(module)
+
+    if state == "ok":
+        return CheckResult(name, True, purpose, optional=optional)
+    if state == "broken":
+        return CheckResult(
+            name, False, f"installed, but will not load: {detail}",
+            "it is already installed, so this is the environment rather than a missing package",
+            optional=optional,
+        )
+
+    prefix = "not installed; only needed for" if optional else "missing, needed for"
+    return CheckResult(name, False, f"{prefix} {purpose}", remedy, optional=optional)
 
 
 def check_screen() -> CheckResult:

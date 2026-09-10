@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import pytest
 
 from conftest import make_screen
 
@@ -93,3 +94,98 @@ def test_is_letter_key_ignores_a_key_with_neither():
     from whs_recorder.utils import is_letter_key
 
     assert not is_letter_key(FakeKey(), "s")
+
+
+def test_an_image_survives_a_path_with_accents(tmp_path):
+    """cv2.imread and imwrite go through the C runtime, which mangles these on Windows."""
+    import numpy as np
+
+    from whs_recorder.utils import read_image, write_image
+
+    folder = tmp_path / "Bruxelles - Hôpital Saint-Élise"
+    folder.mkdir()
+    path = folder / "étape_01_résultat.png"
+
+    frame = np.zeros((20, 30, 3), dtype=np.uint8)
+    frame[:, :, 1] = 200
+
+    write_image(str(path), frame)
+
+    assert path.exists()
+    assert np.array_equal(read_image(str(path)), frame)
+
+
+def test_reading_an_image_that_is_not_there_returns_nothing(tmp_path):
+    from whs_recorder.utils import read_image
+
+    assert read_image(str(tmp_path / "missing.png")) is None
+
+
+def test_reading_a_file_that_is_not_an_image_returns_nothing(tmp_path):
+    from whs_recorder.utils import read_image
+
+    path = tmp_path / "notes.png"
+    path.write_text("this is not a picture", encoding="utf-8")
+
+    assert read_image(str(path)) is None
+
+
+def test_writing_makes_the_folder_it_needs(tmp_path):
+    import numpy as np
+
+    from whs_recorder.utils import write_image
+
+    path = tmp_path / "runs" / "today" / "step.png"
+    write_image(str(path), np.zeros((4, 4, 3), dtype=np.uint8))
+
+    assert path.exists()
+
+
+def test_writing_nothing_is_refused(tmp_path):
+    from whs_recorder.utils import write_image
+
+    with pytest.raises(ValueError, match="Nothing to write"):
+        write_image(str(tmp_path / "step.png"), None)
+
+
+def test_a_format_that_cannot_be_written_is_reported(tmp_path):
+    """A silent failure here would cost a screenshot with no sign of it."""
+    import numpy as np
+
+    from whs_recorder.utils import write_image
+
+    with pytest.raises(OSError):
+        write_image(str(tmp_path / "step.zzz"), np.zeros((4, 4, 3), dtype=np.uint8))
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("Réception d'une ligne", "Réception d'une ligne"),   # accents are kept
+        ("WHS: Receive / Putaway?", "WHS_ Receive _ Putaway_"),
+        ("  spaced   out  ", "spaced out"),
+        ("trailing dot.", "trailing dot"),
+        ("", "Task guide"),
+        ("   ", "Task guide"),
+    ],
+)
+def test_a_recording_name_becomes_a_usable_file_name(name, expected):
+    from whs_recorder.utils import safe_filename
+
+    assert safe_filename(name) == expected
+
+
+@pytest.mark.parametrize("reserved", ["CON", "nul", "COM1", "LPT9"])
+def test_names_windows_reserves_are_stepped_around(reserved):
+    from whs_recorder.utils import safe_filename
+
+    assert safe_filename(reserved).startswith("_")
+
+
+def test_a_document_can_be_written_under_its_accented_name(tmp_path):
+    from whs_recorder.utils import safe_filename
+
+    path = tmp_path / f"{safe_filename('Réception')}.docx"
+    path.write_bytes(b"x")
+
+    assert path.exists() and path.name == "Réception.docx"

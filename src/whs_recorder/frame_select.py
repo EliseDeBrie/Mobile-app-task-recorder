@@ -14,7 +14,7 @@ from typing import Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from .utils import edge_density, get_frame_at, iter_frames, quality_score, sharpness
+from .utils import combine_quality, edge_density, get_frame_at, iter_frames, quality_score, sharpness
 
 # OpenCV hue ranges (0..179) for the banner colours WHS mobile uses.
 TOAST_FAMILIES = {
@@ -148,9 +148,17 @@ def best_frame_near(
         frame = get_frame_at(cap, fi)
         if frame is None:
             continue
-        if sharpness(frame) < sharp_min or edge_density(frame) < edge_min:
+
+        # Both measurements are a full pass over the frame, so they are taken
+        # once and reused rather than recomputed to score the frame.
+        sharp = sharpness(frame)
+        if sharp < sharp_min:
             continue
-        score = quality_score(frame)
+        edges = edge_density(frame)
+        if edges < edge_min:
+            continue
+
+        score = combine_quality(sharp, edges)
         if score > best_score:
             best_score = score
             best = frame

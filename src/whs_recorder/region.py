@@ -14,6 +14,7 @@ A region can be chosen three ways:
 * **Type it** - ``x,y,width,height``, for scripting a fixed kiosk layout.
 """
 
+import contextlib
 import re
 import threading
 from dataclasses import dataclass
@@ -103,8 +104,8 @@ def parse_region(text: str) -> Optional[Region]:
         raise ValueError(f"Cannot read region {text!r}: expected x,y,width,height")
     try:
         left, top, width, height = (int(p) for p in parts)
-    except ValueError:
-        raise ValueError(f"Cannot read region {text!r}: expected four whole numbers")
+    except ValueError as exc:
+        raise ValueError(f"Cannot read region {text!r}: expected four whole numbers") from exc
     if width < MIN_SIDE or height < MIN_SIDE:
         raise ValueError(f"Region {text!r} is too small to capture")
     return Region(left, top, width, height, "manual")
@@ -195,10 +196,10 @@ def region_from_window(title: str) -> Optional[Region]:
     """Find a window by a part of its title. Needs `pygetwindow`."""
     try:
         import pygetwindow
-    except ImportError:
+    except ImportError as exc:
         raise RuntimeError(
-            "Selecting a window by title needs pygetwindow: pip install .[window]"
-        )
+            "Selecting a window by title needs pygetwindow: pip install --user pygetwindow"
+        ) from exc
 
     wanted = (title or "").strip().lower()
     matches = [
@@ -244,10 +245,8 @@ def select_region(parent=None) -> Optional[Region]:
         canvas.image = backdrop  # keep a reference, or Tk drops the picture
     else:
         # No screenshot available: fall back to a translucent window.
-        try:
+        with contextlib.suppress(tk.TclError):
             root.attributes("-alpha", 0.35)
-        except tk.TclError:
-            pass
 
     hint = canvas.create_text(
         width // 2, 40,
@@ -274,9 +273,18 @@ def select_region(parent=None) -> Optional[Region]:
     def on_release(event):
         if "x" not in start:
             return
-        chosen[0] = normalise_box(
+        picked = normalise_box(
             start["x"] + left, start["y"] + top, event.x + left, event.y + top, "select"
         )
+        if picked is None:
+            # A click rather than a drag. Ask again instead of cancelling the
+            # whole recording over a slip of the mouse.
+            start.clear()
+            canvas.coords(box, 0, 0, 0, 0)
+            canvas.itemconfigure(size_text, text="")
+            canvas.itemconfigure(hint, state="normal")
+            return
+        chosen[0] = picked
         root.destroy()
 
     canvas.bind("<ButtonPress-1>", on_press)
@@ -301,11 +309,21 @@ def in_dialog_thread(dialog: Callable):
     created it. The recorder's step popups already run on worker threads, so
     keeping every dialog off the main thread keeps that rule simple to hold.
     """
-    result = []
-    thread = threading.Thread(target=lambda: result.append(dialog()))
+    box = {}
+
+    def call():
+        try:
+            box["value"] = dialog()
+        except BaseException as exc:  # carried back rather than lost in the thread
+            box["error"] = exc
+
+    thread = threading.Thread(target=call)
     thread.start()
     thread.join()
-    return result[0] if result else None
+
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
 
 
 def resolve_region(spec: Optional[str]) -> Optional[Region]:

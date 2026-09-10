@@ -10,7 +10,6 @@ banner, and crops to the app region if the video covers the whole screen.
 import os
 import json
 import datetime
-import re
 from typing import Dict, List, Optional
 
 import cv2
@@ -20,7 +19,7 @@ from .instructions import PREFERRED, VALUE_MODES
 from .recording import STEP, Recording
 from .redaction import RedactionConfig
 from .task_guide import StepCapture, write_evidence_document, write_task_guide
-from .utils import ensure_dir
+from .utils import ensure_dir, read_image, safe_filename, write_image
 
 JPEG_PARAMS = [int(cv2.IMWRITE_JPEG_QUALITY), 92]
 
@@ -35,16 +34,10 @@ TOAST_CAPTION = {
 }
 
 
-def _slug(name: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9]+", "_", (name or "").strip()).strip("_")
-    return slug or "Task_guide"
-
-
 def _write_capture(frame, path: str, redaction: Optional[RedactionConfig]) -> str:
     if redaction is not None:
         frame = redaction.apply(frame)
-    cv2.imwrite(path, frame, JPEG_PARAMS)
-    return path
+    return write_image(path, frame, JPEG_PARAMS)
 
 
 def _result_caption(choice: FrameChoice) -> str:
@@ -80,9 +73,9 @@ def build_evidence(
     markers: str,
     out_dir: str,
     video: str = "",
-    title: str = None,
+    title: Optional[str] = None,
     skip_loading: bool = True,
-    result_offsets: List[float] = None,
+    result_offsets: Optional[List[float]] = None,
     redaction: Optional[RedactionConfig] = None,
     result_window: float = 2.5,
     detect_toast: bool = True,
@@ -116,7 +109,12 @@ def build_evidence(
     if video:
         cap = cv2.VideoCapture(video)
         if not cap.isOpened():
-            raise RuntimeError(f"Cannot open video: {video}")
+            hint = ""
+            if not video.isascii():
+                # OpenCV reads video paths through the C runtime, which on
+                # Windows cannot see characters outside the active code page.
+                hint = " (try a path without accented characters)"
+            raise RuntimeError(f"Cannot open video: {video}{hint}")
         fps = cap.get(cv2.CAP_PROP_FPS) or 10.0
     elif not recording.has_screenshots:
         raise RuntimeError(
@@ -155,7 +153,7 @@ def build_evidence(
         cap.release()
 
     if style == TASK_GUIDE:
-        out_doc = os.path.join(run_out, f"{_slug(title or recording.name)}.docx")
+        out_doc = os.path.join(run_out, f"{safe_filename(title or recording.name)}.docx")
         write_task_guide(
             recording,
             outline,
@@ -206,7 +204,7 @@ def build_evidence(
 
 def _use_recorded_screenshots(recording, step, entry, capture, run_out, redaction, want_result) -> None:
     """Lay out the screenshots the recorder already captured from the app region."""
-    action_frame = cv2.imread(recording.image_path(step.action_img))
+    action_frame = read_image(recording.image_path(step.action_img))
     if action_frame is not None:
         capture.action_mode = "recorded"
         capture.action_img = _write_capture(
@@ -216,7 +214,7 @@ def _use_recorded_screenshots(recording, step, entry, capture, run_out, redactio
     if not want_result or not step.result_img:
         return
 
-    result_frame = cv2.imread(recording.image_path(step.result_img))
+    result_frame = read_image(recording.image_path(step.result_img))
     if result_frame is None:
         return
 
@@ -285,8 +283,10 @@ def _write_manifest(path: str, recording, outline, captures, video, markers, run
                 "t": capture.t,
                 "action": getattr(entry.node, "action", ""),
                 "control": getattr(entry.node, "control", ""),
-                "action_img": capture.action_img,
-                "result_img": capture.result_img,
+                # File names, not full paths: the manifest sits beside the
+                # pictures, and the folder gets zipped and sent on.
+                "action_img": os.path.basename(capture.action_img) if capture.action_img else None,
+                "result_img": os.path.basename(capture.result_img) if capture.result_img else None,
                 "result_mode": capture.result_mode,
                 "result_offset": capture.result_offset,
                 "result_toast": capture.result_toast,

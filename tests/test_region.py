@@ -171,3 +171,20 @@ def test_window_lookup_explains_the_missing_dependency(monkeypatch):
 
     with pytest.raises(RuntimeError, match="pygetwindow"):
         region_module.region_from_window("Warehouse")
+
+
+def test_a_dialog_thread_carries_its_error_back():
+    """Losing the error in the thread would look like the user simply cancelled."""
+    from whs_recorder.region import in_dialog_thread
+
+    def explode():
+        raise RuntimeError("the overlay failed to open")
+
+    with pytest.raises(RuntimeError, match="overlay failed"):
+        in_dialog_thread(explode)
+
+
+def test_a_dialog_thread_returns_its_answer():
+    from whs_recorder.region import Region, in_dialog_thread
+
+    assert in_dialog_thread(lambda: Region(1, 2, 30, 40)) == Region(1, 2, 30, 40)

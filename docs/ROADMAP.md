@@ -42,7 +42,16 @@
 - `check` command reporting what is present, what is missing, and the fix for each
 - `check` reads a test image through the live engine, so an OCR install is proven rather than assumed
 
-## v0.7
+## v0.7 — done
+- A capture session per thread, since steps are detected on one thread and the result watched on another
+- Screenshots read and written through Python, so a path with accents works
+- The recording is saved after every step and written atomically, so a crash costs nothing
+- Documents keep the accents in their name; the manifest names files rather than full paths
+- A failure a consultant can act on is a plain message, not a stack trace
+- The dialog thread reports why it cannot open a window instead of hanging
+- `check` tells a package that is missing apart from one that will not load
+
+## v0.8
 - Desktop UI
 - Packaging to single .exe
 - Template customization (house styles, cover page)

@@ -95,7 +95,7 @@ ACTION_CHOICES = [
     ("Close the page", "close"),
     ("Go back", "back"),
 ]
-ACTION_LABELS = {label: name for label, name in ACTION_CHOICES}
+ACTION_LABELS = dict(ACTION_CHOICES)
 
 #: Values a checkbox step renders as, mirroring Task Recorder's value labels.
 CHECKBOX_VALUE_LABELS = {
