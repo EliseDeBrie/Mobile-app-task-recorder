@@ -2,6 +2,7 @@ import argparse
 
 import cv2
 
+from . import doctor, ocr
 from .evidence_builder import EVIDENCE, STYLES, TASK_GUIDE, build_evidence
 from .instructions import EXAMPLE, PREFERRED, VALUE_MODES
 from .recording import SUBTASK_START, Recording
@@ -27,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Do not capture screenshots while recording; build from a video instead")
     m.add_argument("--no-suggest", action="store_true",
                    help="Do not read the screen to pre-fill the popup (needs OCR to be useful)")
+    m.add_argument("--tesseract", default="",
+                   help="Path to a Tesseract binary, for a portable copy that needed no installer")
+    m.add_argument("--ocr", choices=("windows", "tesseract", "none"), default="",
+                   help="Force an OCR engine instead of taking whichever is available")
     m.add_argument("--redact", help="Redaction rules JSON applied to screenshots as they are captured")
     m.add_argument("--result-window", type=float, default=2.5,
                    help="Seconds to keep watching after a step for the result message")
@@ -48,6 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Also place the result screenshot under each step of a task guide")
     b.add_argument("--skip-loading", action="store_true", help="Skip steps flagged as loading")
     b.add_argument("--redact", help="Redaction rules JSON applied to every screenshot")
+    b.add_argument("--tesseract", default="",
+                   help="Path to a Tesseract binary, for text redaction rules")
     b.add_argument("--result-window", type=float, default=2.5,
                    help="Seconds after a step to search for the result message")
     b.add_argument("--no-toast", action="store_true",
@@ -69,12 +76,21 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--redact", required=True, help="Redaction rules JSON")
     r.add_argument("--out", required=True, help="Output image path")
     r.add_argument("--label", action="store_true", help="Outline and name each redacted area")
+    r.add_argument("--tesseract", default="", help="Path to a Tesseract binary, for text rules")
+
+    sub.add_parser("check", help="Report what this machine can do, and what is missing")
 
     return p
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+
+    ocr.configure(tesseract_path=getattr(args, "tesseract", ""), prefer=getattr(args, "ocr", ""))
+
+    if args.cmd == "check":
+        print(doctor.report(doctor.run_checks()))
+        return
 
     if args.cmd == "mark":
         # Imported here so the other commands work on machines without the

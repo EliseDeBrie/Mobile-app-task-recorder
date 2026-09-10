@@ -40,8 +40,36 @@ Nothing leaves the machine. There is no telemetry and no network call.
 pip install -e .
 ```
 
-Optional extras: `pip install .[ocr]` for text-pattern redaction (also needs a
-Tesseract install), `pip install .[dev]` to run the tests.
+Optional extras: `.[ocr-windows]` for the OCR engine built into Windows,
+`.[ocr]` for Tesseract, `.[window]` to find the app by window title, `.[dev]` to
+run the tests.
+
+## Installing without administrator rights
+
+None of this needs an administrator, which matters on a customer's machine:
+
+| Piece | How to get it as a plain user |
+| --- | --- |
+| Python | Clear "Install for all users" in the installer, or use the Microsoft Store build |
+| The packages | `pip install --user` |
+| OCR | `.[ocr-windows]` uses the engine already in Windows; only wheels are installed |
+| Tesseract, if you prefer it | Unpack a portable copy and pass `--tesseract`, or put it in `%LOCALAPPDATA%\whs-recorder\tesseract` |
+| Screen capture and the key watcher | Nothing to install and no elevation |
+
+Run `whs-recorder check` on a new machine. It reports what is present, what is
+missing, and the command to fix each gap without an administrator:
+
+```
+ok   Python: 3.12.4, installed for this user
+ok   mss: capturing the screen
+--   OCR: windows: built into Windows, nothing to install - in use
+Everything needed to record and build is present.
+None of it needs administrator rights.
+```
+
+One thing to watch: if the warehouse app itself runs as administrator, a
+recorder running as a normal user will not see its taps and keys. Run both the
+same way.
 
 ## Quick start
 
@@ -82,6 +110,12 @@ already filled in, and you correct what is wrong. Without it the popup is blank
 and you type all three. Suggestions are deliberately cautious: a tap it cannot
 read leaves the box empty rather than guessing. Turn the reading off with
 `--no-suggest`.
+
+Two engines can do the reading. Windows OCR is part of Windows 10 and 11 and is
+used by default: nothing is installed for it beyond a `pip install`, and it
+needs no administrator. Tesseract is used when Windows OCR is unavailable; its
+usual installer wants an administrator, so point `--tesseract` at a portable
+copy instead. `whs-recorder check` says which engine is live.
 
 Expect to type button names yourself. Field labels are dark text on a light
 background and read reliably; a button's white label on a coloured fill often

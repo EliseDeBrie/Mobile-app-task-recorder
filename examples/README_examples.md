@@ -1,7 +1,16 @@
 # Worked examples
 
-All commands assume the package is installed (`pip install -e .`) and that you
-are recording the primary monitor.
+All commands assume the package is installed (`pip install -e .`).
+
+## 0. On a machine you have not used before
+
+```
+whs-recorder check
+```
+
+It reports Python, every package, screen capture and the OCR engines, and for
+anything missing it gives the command to fix it as a plain user. No step in this
+tool needs an administrator.
 
 ## 1. Point the recorder at the app
 
@@ -41,8 +50,10 @@ Field labels read reliably, being dark text on a light background. Button
 labels, white on a coloured fill, often do not, so a tap on a button usually
 comes back blank and you type the name.
 
-The three "filled in for you" fields need OCR: `pip install .[ocr]` plus a
-Tesseract install. Without it they arrive blank and you type them. They are
+The three "filled in for you" fields need OCR. On Windows 10 or 11 that is
+`pip install --user ".[ocr-windows]"` and nothing else: the engine is already
+part of Windows. Otherwise install Tesseract and pass `--tesseract` if it lives
+somewhere unusual, such as a portable copy unpacked to avoid its installer. Without it they arrive blank and you type them. They are
 suggestions either way, so read them before you press OK; a tap the reader
 cannot make sense of leaves the box empty rather than guessing. `--no-suggest`
 turns the reading off.

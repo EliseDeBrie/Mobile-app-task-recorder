@@ -3,7 +3,11 @@ python-docx
 numpy
 pynput
 mss
-# Optional: text-pattern redaction (also needs a Tesseract install)
+# Optional: OCR with the engine built into Windows (no administrator needed)
+# winrt-Windows.Media.Ocr[all]
+# winrt-Windows.Graphics.Imaging[all]
+# winrt-Windows.Storage.Streams
+# Optional: OCR with Tesseract instead (a portable copy avoids its installer)
 # pytesseract
 # Optional: pick the app by window title instead of dragging a region
 # pygetwindow
