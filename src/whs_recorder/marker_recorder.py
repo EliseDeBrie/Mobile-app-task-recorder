@@ -40,6 +40,7 @@ from .instructions import ACTION_CHOICES, ACTION_LABELS, ACTIONS, PREFERRED, ren
 from .recording import InfoStep, Recording, Step, SubtaskEnd, SubtaskStart
 from .redaction import RedactionConfig
 from .region import Region, open_capture, popup_position, virtual_screen
+from .suggest import Suggestion, suggest_step
 from .utils import ensure_dir, ensure_parent_dir, is_letter_key, mean_abs_diff
 
 DEFAULT_ACTION_LABEL = ACTION_CHOICES[0][0]
@@ -55,12 +56,25 @@ def _ask_step(
     reason: str,
     diff: float,
     position: Optional[Tuple[int, int]] = None,
+    suggestion: Optional[Suggestion] = None,
+    screen: str = "",
 ) -> Optional[Step]:
-    """Popup for one recorded action, previewing the sentence it will produce."""
+    """Popup for one recorded action, previewing the sentence it will produce.
+
+    Where OCR is available the screen, control and value arrive already filled
+    in from the screenshot; the screen also carries over from the previous step,
+    since a handheld process stays on one screen for several steps at a time.
+    """
     import tkinter as tk
     from tkinter import ttk
 
+    suggestion = suggestion or Suggestion()
     result = [None]
+    row = [0]
+
+    def next_row() -> int:
+        row[0] += 1
+        return row[0]
 
     win = tk.Toplevel(root)
     win.title(f"Step {step_no}")
@@ -73,43 +87,52 @@ def _ask_step(
     frm.grid()
 
     ttk.Label(frm, text=f"Step {step_no} ({reason}, diff={diff:.1f})").grid(
-        row=0, column=0, columnspan=2, sticky="w"
+        row=next_row(), column=0, columnspan=2, sticky="w"
     )
 
-    ttk.Label(frm, text="Action:").grid(row=1, column=0, sticky="w", pady=(8, 0))
+    def field(label_text: str, initial: str = "") -> Tuple[tk.StringVar, ttk.Entry, ttk.Label]:
+        label = ttk.Label(frm, text=label_text)
+        label.grid(row=next_row(), column=0, columnspan=2, sticky="w", pady=(8, 0))
+        var = tk.StringVar(value=initial)
+        entry = ttk.Entry(frm, textvariable=var, width=45)
+        entry.grid(row=next_row(), column=0, columnspan=2)
+        return var, entry, label
+
+    screen_var, _screen_entry, _screen_label = field(
+        "Screen:", suggestion.screen or screen
+    )
+
+    ttk.Label(frm, text="Action:").grid(row=next_row(), column=0, sticky="w", pady=(8, 0))
     action_var = tk.StringVar(value=DEFAULT_ACTION_LABEL)
     ttk.Combobox(
         frm, textvariable=action_var, values=[label for label, _ in ACTION_CHOICES],
         state="readonly", width=42,
-    ).grid(row=2, column=0, columnspan=2, sticky="w")
+    ).grid(row=next_row(), column=0, columnspan=2, sticky="w")
 
-    control_label = ttk.Label(frm, text="Button, field or page name:")
-    control_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
-    control_var = tk.StringVar()
-    control_entry = ttk.Entry(frm, textvariable=control_var, width=45)
-    control_entry.grid(row=4, column=0, columnspan=2)
-
-    ttk.Label(frm, text="Value (for a scan or an entry):").grid(row=5, column=0, sticky="w", pady=(8, 0))
-    value_var = tk.StringVar()
-    ttk.Entry(frm, textvariable=value_var, width=45).grid(row=6, column=0, columnspan=2)
-
-    ttk.Label(frm, text="Step reads as:").grid(row=7, column=0, sticky="w", pady=(8, 0))
-    preview_var = tk.StringVar()
-    ttk.Label(frm, textvariable=preview_var, width=45, wraplength=330, foreground="#1a5fb4").grid(
-        row=8, column=0, columnspan=2, sticky="w"
+    control_var, control_entry, control_label = field(
+        "Button, field or page name:", suggestion.control
+    )
+    value_var, _value_entry, _value_label = field(
+        "Value (for a scan or an entry):", suggestion.value
     )
 
-    ttk.Label(frm, text="Title (shown above the step):").grid(row=9, column=0, sticky="w", pady=(8, 0))
-    title_var = tk.StringVar()
-    ttk.Entry(frm, textvariable=title_var, width=45).grid(row=10, column=0, columnspan=2)
+    ttk.Label(frm, text="Step reads as:").grid(row=next_row(), column=0, sticky="w", pady=(8, 0))
+    preview_var = tk.StringVar()
+    ttk.Label(frm, textvariable=preview_var, width=45, wraplength=330, foreground="#1a5fb4").grid(
+        row=next_row(), column=0, columnspan=2, sticky="w"
+    )
 
-    ttk.Label(frm, text="Note (shown after the step):").grid(row=11, column=0, sticky="w", pady=(8, 0))
+    title_var, _title_entry, _title_label = field("Title (shown above the step):")
+
+    ttk.Label(frm, text="Note (shown after the step):").grid(
+        row=next_row(), column=0, sticky="w", pady=(8, 0)
+    )
     note = tk.Text(frm, width=45, height=3)
-    note.grid(row=12, column=0, columnspan=2)
+    note.grid(row=next_row(), column=0, columnspan=2)
 
     loading_var = tk.BooleanVar(value=False)
     ttk.Checkbutton(frm, text="Loading / transition screen", variable=loading_var).grid(
-        row=13, column=0, columnspan=2, sticky="w", pady=(8, 0)
+        row=next_row(), column=0, columnspan=2, sticky="w", pady=(8, 0)
     )
 
     def refresh_preview(*_args) -> None:
@@ -139,6 +162,7 @@ def _ask_step(
             action=action,
             control=control,
             value=value_var.get().strip(),
+            screen=screen_var.get().strip(),
             title=title_var.get().strip(),
             note=note.get("1.0", "end").strip(),
             is_loading=loading_var.get(),
@@ -149,7 +173,7 @@ def _ask_step(
         win.destroy()
 
     buttons = ttk.Frame(frm)
-    buttons.grid(row=14, column=0, columnspan=2, pady=(10, 0), sticky="e")
+    buttons.grid(row=next_row(), column=0, columnspan=2, pady=(10, 0), sticky="e")
     ttk.Button(buttons, text="OK", command=on_ok).grid(row=0, column=0, padx=4)
     ttk.Button(buttons, text="Skip", command=on_skip).grid(row=0, column=1)
     win.bind("<Return>", lambda _e: on_ok())
@@ -160,6 +184,7 @@ def _ask_step(
     # keyboard itself or the first characters are lost.
     win.focus_force()
     control_entry.focus_force()
+    control_entry.selection_range(0, "end")
 
     wait_for(root, win)
     return result[0]
@@ -251,6 +276,7 @@ def run_marker_recorder(
     region: Optional[Region] = None,
     region_spec: str = "",
     capture_screenshots: bool = True,
+    suggest: bool = True,
     result_window: float = RESULT_WINDOW_SEC,
     redaction: Optional[RedactionConfig] = None,
 ):
@@ -287,6 +313,8 @@ def run_marker_recorder(
         ensure_dir(shots_dir)
 
     last_mark_t = 0.0
+    last_click: Optional[Tuple[int, int]] = None
+    last_screen = ""
     pressed = set()
     pending_timer: Optional[threading.Timer] = None
     dialog_open = False
@@ -339,8 +367,18 @@ def run_marker_recorder(
         recording.save(out_path)
         print(f"Saved {len(recording.steps)} step(s) to: {out_path}")
 
+    def region_point(click: Optional[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
+        """Put a screen click into the captured region's own coordinates."""
+        if click is None:
+            return None
+        x, y = click
+        point = (x - monitor["left"], y - monitor["top"])
+        if 0 <= point[0] < monitor["width"] and 0 <= point[1] < monitor["height"]:
+            return point
+        return None
+
     def maybe_mark(reason: str):
-        nonlocal last_mark_t, last_sig, last_frame, pending_timer
+        nonlocal last_mark_t, last_sig, last_frame, last_screen, pending_timer
 
         with lock:
             pending_timer = None
@@ -391,8 +429,18 @@ def run_marker_recorder(
 
         # The claim is held until the step is written, so stopping the recorder
         # mid-step waits for it rather than saving without it.
+        # Read the screen so the popup arrives filled in, where OCR is available.
+        suggestion = Suggestion()
+        point = region_point(last_click) if reason == "mouse_click" else None
+        if suggest and action_frame is not None:
+            suggestion = suggest_step(action_frame, point=point, before=before_frame)
+
         try:
-            step = dialogs.ask(lambda root: _ask_step(root, step_no, reason, diff, popup_at))
+            step = dialogs.ask(
+                lambda root: _ask_step(
+                    root, step_no, reason, diff, popup_at, suggestion, last_screen
+                )
+            )
 
             if step is None:
                 stop_result.set()
@@ -412,6 +460,7 @@ def run_marker_recorder(
                 step.result_img = save_shot(result_holder.get("frame"), f"step_{step_no:02d}_result.png")
                 step.result_toast = result_holder.get("toast", "")
 
+            last_screen = step.screen or last_screen
             last_mark_t = t_now
             last_frame = grab_frame()
             last_sig = grab_signature(last_frame)
@@ -462,7 +511,9 @@ def run_marker_recorder(
             print(f"Info step: {text}")
 
     def on_click(x, y, button, is_pressed):
+        nonlocal last_click
         if is_pressed:
+            last_click = (int(x), int(y))
             schedule_check("mouse_click")
 
     def on_key_press(key):
@@ -499,6 +550,13 @@ def run_marker_recorder(
         print(f"Watching the whole of monitor {monitor_index}.")
     if capture_screenshots:
         print(f"Screenshots go to: {shots_dir}")
+        if suggest:
+            from . import ocr as ocr_module
+
+            if ocr_module.available():
+                print("Reading the screen to fill the popup in for you.")
+            else:
+                print("Install .[ocr] to have the screen, control and value filled in for you.")
         if redaction is not None and not redaction.is_empty():
             print(f"Redaction active while recording: {redaction.describe()}")
     else:

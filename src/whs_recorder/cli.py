@@ -25,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Monitor index used when --region is full (1=primary)")
     m.add_argument("--no-screenshots", action="store_true",
                    help="Do not capture screenshots while recording; build from a video instead")
+    m.add_argument("--no-suggest", action="store_true",
+                   help="Do not read the screen to pre-fill the popup (needs OCR to be useful)")
     m.add_argument("--redact", help="Redaction rules JSON applied to screenshots as they are captured")
     m.add_argument("--result-window", type=float, default=2.5,
                    help="Seconds to keep watching after a step for the result message")
@@ -95,6 +97,7 @@ def main(argv=None):
             region=region,
             region_spec=spec,
             capture_screenshots=not args.no_screenshots,
+            suggest=not args.no_suggest,
             result_window=args.result_window,
             redaction=load_redaction_config(args.redact),
         )
@@ -130,11 +133,17 @@ def main(argv=None):
         print(recording.name)
         if recording.description:
             print(recording.description)
+        screen = ""
         for entry in recording.outline(skip_loading=args.skip_loading):
             indent = "    " * entry.depth
             if entry.kind == SUBTASK_START:
                 print(f"\n{indent}[{entry.node.name}]")
+                screen = ""
                 continue
+            step_screen = getattr(entry.node, "screen", "")
+            if step_screen and step_screen != screen:
+                print(f"{indent}  On the {step_screen} screen:")
+                screen = step_screen
             if entry.node.title:
                 print(f"{indent}    {entry.node.title}")
             print(f"{indent}{entry.number:>3}. {entry.node.instruction(args.values)}")

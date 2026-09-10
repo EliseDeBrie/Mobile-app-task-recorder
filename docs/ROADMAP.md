@@ -30,7 +30,12 @@
 - Every Tk window runs on one owner thread
 - Video builds crop to the region when the recording covers the whole screen
 
-## v0.5
+## v0.5 — done
+- Each step records the screen it happened on, printed in the guide when it changes
+- The popup arrives filled in, where OCR is available: screen from the title bar, control from the label above the tap, value from the text that appeared
+- Shared OCR reader behind both the redaction rules and the suggestions
+
+## v0.6
 - Desktop UI
 - Packaging to single .exe
 - Template customization (house styles, cover page)

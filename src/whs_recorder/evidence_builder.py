@@ -274,6 +274,7 @@ def _write_manifest(path: str, recording, outline, captures, video, markers, run
             "kind": entry.kind,
             "depth": entry.depth,
             "instruction": getattr(entry.node, "instruction", lambda mode: "")(value_mode),
+            "screen": getattr(entry.node, "screen", ""),
             "title": getattr(entry.node, "title", ""),
             "note": getattr(entry.node, "note", ""),
         }

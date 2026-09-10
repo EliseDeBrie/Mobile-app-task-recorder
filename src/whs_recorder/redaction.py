@@ -33,10 +33,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+from .ocr import words_with_boxes
+
 MODES = ("box", "blur", "pixelate")
 DEFAULT_MODE = "box"
-
-_OCR_WARNED = False
 
 
 def _clamp(value: int, low: int, high: int) -> int:
@@ -202,7 +202,7 @@ class RedactionConfig:
         return out
 
     def _text_boxes(self, frame, width, height):
-        words = _ocr_words(frame, self.ocr_min_confidence)
+        words = words_with_boxes(frame, self.ocr_min_confidence)
         matchers = [(rule, rule.compiled()) for rule in self.text_patterns]
         for text, (x, y, w, h) in words:
             for rule, matcher in matchers:
@@ -237,42 +237,3 @@ def load_redaction_config(path: Optional[str]) -> Optional[RedactionConfig]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return RedactionConfig.from_dict(data)
-
-
-def _ocr_words(frame, min_confidence: float) -> List[Tuple[str, Tuple[int, int, int, int]]]:
-    """OCR the frame into (text, (x, y, w, h)) tuples. Empty when OCR is unavailable."""
-    global _OCR_WARNED
-    try:
-        import pytesseract
-    except ImportError:
-        if not _OCR_WARNED:
-            print("[redaction] pytesseract is not installed - text rules are skipped.")
-            _OCR_WARNED = True
-        return []
-
-    try:
-        data = pytesseract.image_to_data(
-            cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
-            output_type=pytesseract.Output.DICT,
-        )
-    except Exception as exc:  # tesseract binary missing or unreadable frame
-        if not _OCR_WARNED:
-            print(f"[redaction] OCR unavailable ({exc}) - text rules are skipped.")
-            _OCR_WARNED = True
-        return []
-
-    words = []
-    for i, text in enumerate(data.get("text", [])):
-        text = (text or "").strip()
-        if not text:
-            continue
-        try:
-            confidence = float(data["conf"][i])
-        except (KeyError, TypeError, ValueError):
-            confidence = -1.0
-        if confidence < min_confidence:
-            continue
-        words.append(
-            (text, (int(data["left"][i]), int(data["top"][i]), int(data["width"][i]), int(data["height"][i])))
-        )
-    return words

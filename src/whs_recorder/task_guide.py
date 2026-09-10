@@ -65,6 +65,15 @@ def _add_annotation(doc: Document, text: str, indent_in: float, italic: bool = F
     run.italic = italic
 
 
+def _add_screen_line(doc: Document, screen: str, indent_in: float) -> None:
+    """Name the screen when it changes, the way a task guide names the form."""
+    paragraph = doc.add_paragraph()
+    paragraph.paragraph_format.left_indent = Inches(indent_in)
+    paragraph.paragraph_format.space_before = Pt(6)
+    run = paragraph.add_run(f"On the {screen} screen:")
+    run.bold = True
+
+
 def _add_step_line(doc: Document, number: int, text: str, indent_in: float) -> None:
     paragraph = doc.add_paragraph()
     paragraph.paragraph_format.left_indent = Inches(indent_in)
@@ -90,12 +99,20 @@ def write_task_guide(
     if recording.description:
         doc.add_paragraph(recording.description)
 
+    screen = ""
+
     for entry in outline:
         indent = STEP_INDENT_IN * entry.depth
 
         if entry.kind == SUBTASK_START:
             doc.add_heading(entry.node.name or "Subtask", level=min(2 + entry.depth, 4))
+            screen = ""  # the heading re-establishes where the reader is
             continue
+
+        step_screen = getattr(entry.node, "screen", "")
+        if step_screen and step_screen != screen:
+            _add_screen_line(doc, step_screen, indent)
+            screen = step_screen
 
         if entry.node.title:
             _add_annotation(doc, entry.node.title, indent)

@@ -27,14 +27,25 @@ Other ways to say where the app is:
 Every tap or Enter that visibly changes that region raises a popup. Answer it the
 way Task Recorder would have answered itself:
 
-| Field | What to put |
-| --- | --- |
-| Action | Tap, scan, enter a value, select a row, check box, close, back |
-| Button, field or page name | The label on screen: `Inbound`, `LP`, `Quantity` |
-| Value | What you scanned or typed, for a scan or an entry |
-| Title | Something the reader should know *before* doing the step |
-| Note | Something useful *after* it |
-| Loading / transition screen | Tick for frames you do not want in the guide |
+| Field | What to put | Filled in for you |
+| --- | --- | --- |
+| Screen | The screen you are on: `Purchase receive` | From the title bar, and it carries over until it changes |
+| Action | Tap, scan, enter a value, select a row, check box, close, back | No |
+| Button, field or page name | The label on screen: `Inbound`, `LP`, `Quantity` | From the label just above your tap |
+| Value | What you scanned or typed, for a scan or an entry | From the text that appeared where you tapped |
+| Title | Something the reader should know *before* doing the step | No |
+| Note | Something useful *after* it | No |
+| Loading / transition screen | Tick for frames you do not want in the guide | No |
+
+Field labels read reliably, being dark text on a light background. Button
+labels, white on a coloured fill, often do not, so a tap on a button usually
+comes back blank and you type the name.
+
+The three "filled in for you" fields need OCR: `pip install .[ocr]` plus a
+Tesseract install. Without it they arrive blank and you type them. They are
+suggestions either way, so read them before you press OK; a tap the reader
+cannot make sense of leaves the box empty rather than guessing. `--no-suggest`
+turns the reading off.
 
 The popup shows the sentence your answers produce, so you can see the guide being
 written as you record. It opens beside the app, never over it, so it stays out of
@@ -72,10 +83,12 @@ Receive a purchase order line
 How a warehouse worker receives one line of a purchase order on the handheld.
 
 [Open purchase receive]
+        On the Main menu screen:
       1. Tap Inbound.
       2. Tap Purchase receive.
 
 [Receive the line]
+        On the Purchase receive screen:
         Scan the bar code on the paperwork, do not type it.
       3. In the Purchase order field, scan 'PO000045'.
       4. In the Quantity field, enter '12'.
@@ -165,6 +178,7 @@ Tune the rules against one screenshot before rebuilding a whole document. See
       "action": "scan",
       "control": "Purchase order",
       "value": "PO000045",
+      "screen": "Purchase receive",
       "title": "Scan the bar code on the paperwork, do not type it.",
       "note": "",
       "user_text": "",
