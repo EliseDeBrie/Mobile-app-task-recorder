@@ -40,6 +40,7 @@
 - Second OCR engine, Windows OCR, preferred over Tesseract because it installs nothing
 - Portable Tesseract supported through `--tesseract`, an environment variable, or a known folder
 - `check` command reporting what is present, what is missing, and the fix for each
+- `check` reads a test image through the live engine, so an OCR install is proven rather than assumed
 
 ## v0.7
 - Desktop UI

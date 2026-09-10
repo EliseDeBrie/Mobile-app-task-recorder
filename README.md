@@ -62,10 +62,15 @@ missing, and the command to fix each gap without an administrator:
 ```
 ok   Python: 3.12.4, installed for this user
 ok   mss: capturing the screen
---   OCR: windows: built into Windows, nothing to install - in use
+ok   OCR: windows: built into Windows, nothing to install - in use
+ok   OCR: reading a test image with windows: read "WHS RECORDER 12345"
 Everything needed to record and build is present.
 None of it needs administrator rights.
 ```
+
+The last line of that report is the useful one: it prints a test image, reads it
+back through whichever engine is live, and shows you what came out. An engine
+that loads but reads badly is caught there rather than mid-recording.
 
 One thing to watch: if the warehouse app itself runs as administrator, a
 recorder running as a normal user will not see its taps and keys. Run both the

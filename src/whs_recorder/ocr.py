@@ -17,6 +17,7 @@ built on it go quiet rather than failing.
 import os
 import shutil
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -139,54 +140,77 @@ def windows_engine(modules=None):
         return None
 
 
+ASYNC_STARTED = 0
+ASYNC_COMPLETED = 1
+WINDOWS_TIMEOUT_SEC = 30.0
+
+
+def wait_for_operation(operation, timeout: float = WINDOWS_TIMEOUT_SEC):
+    """Wait for a WinRT async operation and return its result.
+
+    Its status is polled rather than awaited: this runs on whichever worker
+    thread detected the step, and such a thread has no asyncio event loop of its
+    own to await on.
+    """
+    deadline = time.time() + timeout
+    while int(operation.status) == ASYNC_STARTED and time.time() < deadline:
+        time.sleep(0.01)
+
+    status = int(operation.status)
+    if status != ASYNC_COMPLETED:
+        raise RuntimeError(f"Windows OCR did not finish (status {status})")
+    return operation.get_results()
+
+
 def _read_windows(frame, min_confidence: float) -> List[TextLine]:
     """Read a frame with the OCR engine built into Windows."""
-    import asyncio
-
     modules = winrt_modules()
     if modules is None:
         return []
 
-    BitmapPixelFormat = modules["imaging"].BitmapPixelFormat
-    SoftwareBitmap = modules["imaging"].SoftwareBitmap
-    Buffer = modules["streams"].Buffer
-
+    imaging = modules["imaging"]
     engine = windows_engine(modules)
     if engine is None:
         return []
 
     height, width = frame.shape[:2]
+    # WinRT wants BGRA8; OpenCV frames are BGR, so only the alpha row is added.
     data = cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA).tobytes()
 
-    buffer = Buffer(len(data))
+    buffer = modules["streams"].Buffer(len(data))
     buffer.length = len(data)
     with memoryview(buffer) as view:
         view[:] = data
 
-    bitmap = SoftwareBitmap.create_copy_from_buffer(buffer, BitmapPixelFormat.BGRA8, width, height)
-    result = asyncio.run(engine.recognize_async(bitmap))
+    bitmap = imaging.SoftwareBitmap.create_copy_from_buffer(
+        buffer,
+        imaging.BitmapPixelFormat.BGRA8,
+        width,
+        height,
+        # A screenshot is opaque, so the alpha channel carries nothing.
+        imaging.BitmapAlphaMode.IGNORE,
+    )
 
-    lines: List[TextLine] = []
+    result = wait_for_operation(engine.recognize_async(bitmap))
+
+    words: List[TextLine] = []
     for index, line in enumerate(result.lines or []):
-        words = list(line.words or [])
-        if not words:
-            continue
-        for word in words:
+        for word in line.words or []:
             rect = word.bounding_rect
-            lines.append(
+            words.append(
                 TextLine(
                     text=word.text,
                     left=int(rect.x),
                     top=int(rect.y),
                     width=int(rect.width),
                     height=int(rect.height),
-                    # Windows OCR reports only what it is sure of, and gives no
+                    # Windows OCR reports only what it is sure of and gives no
                     # score of its own, so every word clears any threshold.
                     confidence=100.0,
                     line_key=(0, 0, index),
                 )
             )
-    return lines
+    return words
 
 
 # ------------------------------------------------------------------- tesseract
