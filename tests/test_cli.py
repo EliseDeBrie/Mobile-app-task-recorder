@@ -1,24 +1,42 @@
 import json
 
 import cv2
-import numpy as np
 import pytest
 
 from conftest import make_screen
 
 from whs_recorder import cli
+from whs_recorder.evidence_builder import EVIDENCE, TASK_GUIDE
+from whs_recorder.instructions import EXAMPLE, PREFERRED
+from whs_recorder.recording import InfoStep, Recording, Step, SubtaskEnd, SubtaskStart
+
+
+@pytest.fixture
+def recording_path(tmp_path):
+    r = Recording(name="Receive a purchase order line", description="WHS mobile receiving.")
+    r.add(SubtaskStart(t=0.2, name="Open the work"))
+    r.add(Step(t=1.5, action="scan", control="LP", value="LP000123", title="Check the label",
+               note="Reprint a damaged label."))
+    r.add(SubtaskEnd(t=2.0))
+    r.add(Step(t=3.0, action="tap", control="OK", is_loading=True))
+    r.add(InfoStep(t=4.0, text="Move the pallet to the staging lane"))
+    path = tmp_path / "recording.json"
+    r.save(str(path))
+    return str(path)
 
 
 def test_build_defaults():
     args = cli.build_parser().parse_args(["build", "--video", "v.mp4", "--markers", "m.json", "--out", "o"])
 
+    assert args.style == TASK_GUIDE
+    assert args.values == PREFERRED
+    assert args.with_result is False
     assert args.result_window == 2.5
     assert args.no_toast is False
     assert args.redact is None
-    assert args.result_offsets == "0.6,1.2"
 
 
-def test_build_passes_the_new_options_through(monkeypatch, tmp_path):
+def test_build_passes_the_options_through(monkeypatch, tmp_path):
     config = tmp_path / "r.json"
     config.write_text(json.dumps({"regions": [{"name": "r", "box": [0, 0, 1, 0.1]}]}), encoding="utf-8")
 
@@ -28,8 +46,13 @@ def test_build_passes_the_new_options_through(monkeypatch, tmp_path):
     cli.main([
         "build", "--video", "v.mp4", "--markers", "m.json", "--out", "o",
         "--redact", str(config), "--result-window", "4", "--no-toast", "--skip-loading",
+        "--style", "evidence", "--values", "example", "--with-result", "--title", "UAT evidence",
     ])
 
+    assert captured["style"] == EVIDENCE
+    assert captured["value_mode"] == EXAMPLE
+    assert captured["include_result"] is True
+    assert captured["title"] == "UAT evidence"
     assert captured["detect_toast"] is False
     assert captured["result_window"] == 4.0
     assert captured["skip_loading"] is True
@@ -45,6 +68,41 @@ def test_build_without_a_redaction_config(monkeypatch):
 
     assert captured["redaction"] is None
     assert captured["detect_toast"] is True
+    assert captured["title"] is None
+
+
+def test_an_unknown_style_is_refused_by_the_parser():
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(
+            ["build", "--video", "v", "--markers", "m", "--out", "o", "--style", "fancy"]
+        )
+
+
+def test_mark_accepts_a_recording_name_and_description():
+    args = cli.build_parser().parse_args(
+        ["mark", "--out", "r.json", "--name", "Receiving", "--description", "How we receive."]
+    )
+    assert args.name == "Receiving"
+    assert args.description == "How we receive."
+
+
+def test_preview_prints_the_guide_text(recording_path, capsys):
+    cli.main(["preview", "--markers", recording_path, "--skip-loading"])
+
+    out = capsys.readouterr().out
+    assert "Receive a purchase order line" in out
+    assert "[Open the work]" in out
+    assert "Check the label" in out
+    assert "1. In the LP field, scan 'LP000123'." in out
+    assert "(Reprint a damaged label.)" in out
+    assert "2. Move the pallet to the staging lane." in out
+    assert "Tap OK." not in out  # the loading step is skipped
+
+
+def test_preview_can_show_example_values(recording_path, capsys):
+    cli.main(["preview", "--markers", recording_path, "--values", "example"])
+
+    assert "In the LP field, scan the value from the label." in capsys.readouterr().out
 
 
 def test_redact_preview_writes_a_redacted_image(tmp_path, capsys):

@@ -12,10 +12,15 @@ and no network call in any code path.
 
 | Artefact | Written by | Contains |
 | --- | --- | --- |
-| `step_markers.json` | `whs-recorder mark` | Timestamps, your step titles and notes, and the screen-change score per step. No pixels. |
-| `evidence_<stamp>/step_*.jpg` | `whs-recorder build` | The screenshots, after redaction. |
-| `evidence_<stamp>/steps.json` | `whs-recorder build` | The per-step manifest: titles, notes, image paths, which rules were applied. |
-| `evidence_<stamp>/WHS_Test_Evidence.docx` | `whs-recorder build` | The document, with the redacted screenshots embedded. |
+| the recording JSON | `whs-recorder mark` | Timestamps, the action, control and value of each step, your titles and notes, and the screen-change score. No pixels. |
+| `run_<stamp>/step_*.jpg` | `whs-recorder build` | The screenshots, after redaction. |
+| `run_<stamp>/steps.json` | `whs-recorder build` | The per-step manifest: generated instructions, titles, notes, image paths, which rules were applied. |
+| `run_<stamp>/<recording name>.docx` | `whs-recorder build` | The document, with the redacted screenshots embedded. |
+
+The values you scan and type are part of the recording, and the generated steps
+repeat them ("In the LP field, scan 'LP000123'"). Build with `--values example`
+to replace them with "enter a value" wording, which keeps live data out of a
+guide that will be shared widely.
 
 The source recording is only ever read. Redaction happens before an image is
 written to disk, so no unredacted screenshot is ever created, and the document
@@ -89,4 +94,4 @@ the config to keep the outlines in the delivered document.
 * Check `steps.json` for the rules that actually ran. It records `"redaction":
   "none"` when the run had no rules, which is the usual cause of a leak.
 * Your own step titles and notes go into the document verbatim. They are not
-  redacted.
+  redacted, and neither are the recorded values in the step text.
