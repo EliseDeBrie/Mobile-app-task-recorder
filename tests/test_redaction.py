@@ -111,8 +111,7 @@ def test_missing_text_pattern_is_rejected():
 def test_text_rules_are_skipped_when_ocr_is_unavailable(screen, monkeypatch, capsys):
     import whs_recorder.redaction as redaction
 
-    monkeypatch.setattr(redaction, "_OCR_WARNED", False)
-    monkeypatch.setattr(redaction, "_ocr_words", lambda frame, conf: [])
+    monkeypatch.setattr(redaction, "words_with_boxes", lambda frame, conf: [])
 
     out = config(text_patterns=[{"name": "lp", "pattern": "LP[0-9]+"}]).apply(screen)
     assert np.array_equal(out, screen)
@@ -121,7 +120,10 @@ def test_text_rules_are_skipped_when_ocr_is_unavailable(screen, monkeypatch, cap
 def test_text_rule_masks_the_matching_word(screen, monkeypatch):
     import whs_recorder.redaction as redaction
 
-    monkeypatch.setattr(redaction, "_ocr_words", lambda frame, conf: [("LP123456", (40, 50, 90, 20)), ("Confirm", (40, 90, 70, 20))])
+    monkeypatch.setattr(
+        redaction, "words_with_boxes",
+        lambda frame, conf: [("LP123456", (40, 50, 90, 20)), ("Confirm", (40, 90, 70, 20))],
+    )
 
     out = config(text_patterns=[{"name": "lp", "pattern": "LP[0-9]{6}", "padding": 0}]).apply(screen)
 
@@ -132,7 +134,7 @@ def test_text_rule_masks_the_matching_word(screen, monkeypatch):
 def test_region_and_text_rules_combine(screen, monkeypatch):
     import whs_recorder.redaction as redaction
 
-    monkeypatch.setattr(redaction, "_ocr_words", lambda frame, conf: [("LP999999", (40, 300, 90, 20))])
+    monkeypatch.setattr(redaction, "words_with_boxes", lambda frame, conf: [("LP999999", (40, 300, 90, 20))])
 
     cfg = config(
         regions=[{"name": "header", "box": [0.0, 0.0, 1.0, 0.05]}],

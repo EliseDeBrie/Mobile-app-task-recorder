@@ -26,6 +26,12 @@ no tab for an extension to photograph, which is how Task Recorder gets its
 screenshots. Watching one region solves the other half of the problem too: the
 clock and the taskbar can no longer trigger steps of their own.
 
+The Warehouse Management mobile app is installed from the Microsoft Store or
+sideloaded, on Windows, Android and iOS. A browser extension cannot see any of
+them, since extensions only ever see browser tabs. The one exception is the
+browser-based emulator inside Supply Chain Management, which Microsoft's own
+documentation warns is not a substitute for the real app.
+
 Nothing leaves the machine. There is no telemetry and no network call.
 
 ## Install
@@ -58,6 +64,31 @@ with `--region 220,140,360,640`, or watch the whole screen with `--region full`.
 While recording: `Ctrl+Shift+S` starts a subtask, `Ctrl+Shift+E` ends it,
 `Ctrl+Shift+I` adds an info step, `Ctrl+Shift+End` stops and saves. More recipes
 are in [examples/README_examples.md](examples/README_examples.md).
+
+## What each step records
+
+A step holds the same things a Task Recorder step holds, as text:
+
+| Field | Example | Where it comes from |
+| --- | --- | --- |
+| Screen | `Purchase receive` | Read from the title bar, and carried over until it changes |
+| Action | `scan` | Chosen in the popup |
+| Control | `Purchase order` | Read from the label above the tap |
+| Value | `PO000045` | Read from the text that appeared where you tapped |
+| Title, note | your words | Typed in the popup |
+
+Where OCR is available the popup opens with the screen, control and value
+already filled in, and you correct what is wrong. Without it the popup is blank
+and you type all three. Suggestions are deliberately cautious: a tap it cannot
+read leaves the box empty rather than guessing. Turn the reading off with
+`--no-suggest`.
+
+Expect to type button names yourself. Field labels are dark text on a light
+background and read reliably; a button's white label on a coloured fill often
+does not, so those steps come back blank.
+
+The screen name is what gives the guide its bearings: it is printed once
+whenever it changes, as `On the Purchase receive screen:`.
 
 ## Step text
 

@@ -35,6 +35,9 @@ gives "In the First name field, enter 'John'".
 * *User-supplied value* is the author's own words. On a step with a value it
   replaces the value; on a step without one it replaces the whole sentence.
 
+**Steps know which form they were on.** Task Recorder records the form context
+along with the control, which is what lets a guide say where the reader is.
+
 **Structure comes from three node kinds.** Subtasks group a run of steps and can
 nest. Info steps are numbered steps the author writes for actions that happen
 away from the client. Hidden steps stay in the recording but are kept out of the
@@ -56,7 +59,7 @@ recorded steps and any screenshots that were captured".
 
 | Task Recorder | Here | Notes |
 | --- | --- | --- |
-| Instrumented controls report each action | The popup asks | Nothing on the handheld reports what you tapped, so the recorder asks for the action, the control and the value at the moment it detects a screen change. |
+| Instrumented controls report each action | The popup asks, pre-filled by reading the screen | Nothing on the handheld reports what you tapped. Where OCR is available the recorder reads the screen name from the title bar, the control from the label above the tap, and the value from the text that just appeared, and shows them for you to correct. |
 | Instruction label resolution | `instructions.py` | Same three-stage resolution and the same `%1` / `%2` arguments, with a label table that says tap and scan instead of click and type. |
 | Preferred / example / user-supplied values | `--values`, and `user_text` per step | Same rules, including "a button has no example label". |
 | Subtasks, info steps, hidden steps | `recording.py` | Same nesting and the same continuous numbering across subtasks. |

@@ -198,3 +198,51 @@ def test_evidence_document_keeps_its_provenance_and_pairs_the_screenshots(record
     assert "Redaction applied to every screenshot: 1 region rule(s)." in body
     assert ("Heading 3", "1. Tap Inbound.") in styles(doc)
     assert len(doc.inline_shapes) == 4
+
+
+def screened_recording():
+    r = Recording(name="Receiving")
+    r.add(Step(t=1.0, action="menu", control="Inbound", screen="Main menu"))
+    r.add(Step(t=2.0, action="scan", control="LP", value="LP1", screen="Purchase receive"))
+    r.add(Step(t=3.0, action="enter", control="Quantity", value="12", screen="Purchase receive"))
+    r.add(SubtaskStart(t=3.5, name="Confirm"))
+    r.add(Step(t=4.0, action="tap", control="OK", screen="Purchase receive"))
+    return r
+
+
+def test_the_screen_is_named_when_it_changes(tmp_path):
+    r = screened_recording()
+    out = tmp_path / "guide.docx"
+    write_task_guide(r, r.outline(), {}, str(out))
+
+    body = texts(Document(str(out)))
+    assert body.count("On the Purchase receive screen:") == 2  # once, then again after the subtask
+    assert "On the Main menu screen:" in body
+    assert body.index("On the Purchase receive screen:") < body.index("2. In the LP field, scan 'LP1'.")
+
+
+def test_the_screen_is_not_repeated_for_every_step(tmp_path):
+    r = screened_recording()
+    out = tmp_path / "guide.docx"
+    write_task_guide(r, r.outline(), {}, str(out))
+
+    body = texts(Document(str(out)))
+    third = body.index("3. In the Quantity field, enter '12'.")
+    assert body[third - 1] != "On the Purchase receive screen:"
+
+
+def test_a_subtask_heading_re_establishes_the_screen(tmp_path):
+    """After a heading the reader has lost the thread, so the screen is named again."""
+    r = screened_recording()
+    out = tmp_path / "guide.docx"
+    write_task_guide(r, r.outline(), {}, str(out))
+
+    body = texts(Document(str(out)))
+    assert body[body.index("Confirm") + 1] == "On the Purchase receive screen:"
+
+
+def test_a_recording_without_screens_gains_no_context_lines(tmp_path, recording):
+    out = tmp_path / "guide.docx"
+    write_task_guide(recording, recording.outline(), {}, str(out))
+
+    assert not any(t.startswith("On the ") for t in texts(Document(str(out))))

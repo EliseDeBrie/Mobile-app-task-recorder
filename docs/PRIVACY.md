@@ -12,7 +12,7 @@ and no network call in any code path.
 
 | Artefact | Written by | Contains |
 | --- | --- | --- |
-| the recording JSON | `whs-recorder mark` | Timestamps, the action, control and value of each step, your titles and notes, the screen region being watched, and the screen-change score. No pixels. |
+| the recording JSON | `whs-recorder mark` | Timestamps, the screen, action, control and value of each step, your titles and notes, the screen region being watched, and the screen-change score. No pixels. |
 | `<recording>_screenshots/*.png` | `whs-recorder mark` | The screenshots captured from the app region as you record. |
 | `run_<stamp>/step_*.jpg` | `whs-recorder build` | The screenshots, after redaction. |
 | `run_<stamp>/steps.json` | `whs-recorder build` | The per-step manifest: generated instructions, titles, notes, image paths, which rules were applied. |
@@ -25,6 +25,11 @@ guide that will be shared widely.
 
 Only the region you selected is ever captured. The rest of the desktop, other
 windows, and a second monitor are never in frame.
+
+OCR, where it is used to fill the popup in for you, runs on this machine through
+a local Tesseract install. No screenshot is sent anywhere. What it reads can end
+up in the recording as the screen, control and value of a step, so the same care
+applies to those fields as to the screenshots.
 
 At build time, redaction happens before an image is written, so the run folder
 never holds an unredacted screenshot and the document cannot embed one.

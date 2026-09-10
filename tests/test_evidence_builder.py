@@ -20,7 +20,8 @@ GREEN = (0, 200, 0)
 def recording_path(tmp_path):
     r = Recording(name="Receive a purchase order line", description="WHS mobile receiving.")
     r.add(SubtaskStart(t=0.2, name="Open the work"))
-    r.add(Step(t=1.5, action="scan", control="LP", value="LP000123", note="LP from the pallet label"))
+    r.add(Step(t=1.5, action="scan", control="LP", value="LP000123", screen="Purchase receive",
+               note="LP from the pallet label"))
     r.add(SubtaskEnd(t=2.0))
     r.add(Step(t=2.4, action="tap", control="OK", is_loading=True))
     r.add(Step(t=4.4, action="enter", control="Quantity", value="12"))
@@ -82,6 +83,7 @@ def test_the_manifest_records_the_generated_instructions(video, recording_path, 
     assert [s["kind"] for s in manifest["steps"]] == ["subtask_start", "step", "step", "info"]
     assert manifest["steps"][1]["instruction"] == "In the LP field, scan 'LP000123'."
     assert manifest["steps"][1]["control"] == "LP"
+    assert manifest["steps"][1]["screen"] == "Purchase receive"
     assert manifest["steps"][3].get("action_img") is None
 
 

@@ -15,8 +15,8 @@ from whs_recorder.recording import InfoStep, Recording, Step, SubtaskEnd, Subtas
 def recording_path(tmp_path):
     r = Recording(name="Receive a purchase order line", description="WHS mobile receiving.")
     r.add(SubtaskStart(t=0.2, name="Open the work"))
-    r.add(Step(t=1.5, action="scan", control="LP", value="LP000123", title="Check the label",
-               note="Reprint a damaged label."))
+    r.add(Step(t=1.5, action="scan", control="LP", value="LP000123", screen="Purchase receive",
+               title="Check the label", note="Reprint a damaged label."))
     r.add(SubtaskEnd(t=2.0))
     r.add(Step(t=3.0, action="tap", control="OK", is_loading=True))
     r.add(InfoStep(t=4.0, text="Move the pallet to the staging lane"))
@@ -93,6 +93,7 @@ def test_preview_prints_the_guide_text(recording_path, capsys):
     assert "Receive a purchase order line" in out
     assert "[Open the work]" in out
     assert "Check the label" in out
+    assert "On the Purchase receive screen:" in out
     assert "1. In the LP field, scan 'LP000123'." in out
     assert "(Reprint a damaged label.)" in out
     assert "2. Move the pallet to the staging lane." in out

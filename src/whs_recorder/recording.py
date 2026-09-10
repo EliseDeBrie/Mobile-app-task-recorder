@@ -42,6 +42,8 @@ class Step:
     action: str = "tap"
     control: str = ""
     value: str = ""
+    #: The screen the step happened on, which groups steps the way a form does.
+    screen: str = ""
     title: str = ""
     note: str = ""
     user_text: str = ""
