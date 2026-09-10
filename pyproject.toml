@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mobile-app-task-recorder"
-version = "0.5.0"
+version = "0.6.0"
 description = "Offline evidence builder for D365 WMS mobile processes"
 authors = [{name = "D365Solutions"}]
 license = {text = "GPL-3.0"}
@@ -19,6 +19,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The OCR engine built into Windows. Nothing to install beyond these wheels,
+# and no administrator rights.
+ocr-windows = [
+    "winrt-Windows.Media.Ocr[all]; sys_platform == 'win32'",
+    "winrt-Windows.Graphics.Imaging[all]; sys_platform == 'win32'",
+    "winrt-Windows.Storage.Streams; sys_platform == 'win32'",
+]
+# Tesseract, for machines where Windows OCR is unavailable. The binary itself
+# is separate: a portable copy works, so its installer can be avoided.
 ocr = ["pytesseract"]
 window = ["pygetwindow"]
 dev = ["pytest"]

@@ -35,7 +35,13 @@
 - The popup arrives filled in, where OCR is available: screen from the title bar, control from the label above the tap, value from the text that appeared
 - Shared OCR reader behind both the redaction rules and the suggestions
 
-## v0.6
+## v0.6 — done
+- Runs with no administrator rights anywhere: per-user Python, `pip install --user`, and the OCR engine already in Windows
+- Second OCR engine, Windows OCR, preferred over Tesseract because it installs nothing
+- Portable Tesseract supported through `--tesseract`, an environment variable, or a known folder
+- `check` command reporting what is present, what is missing, and the fix for each
+
+## v0.7
 - Desktop UI
 - Packaging to single .exe
 - Template customization (house styles, cover page)
