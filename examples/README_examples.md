@@ -3,10 +3,7 @@
 All commands assume the package is installed (`pip install -e .`) and that you
 are recording the primary monitor.
 
-## 1. Record the process
-
-Start your own screen capture (Xbox Game Bar, OBS, Teams), then start the
-recorder. Work through the process on the handheld as you normally would.
+## 1. Point the recorder at the app
 
 ```
 whs-recorder mark --out runs/receiving/recording.json ^
@@ -14,7 +11,20 @@ whs-recorder mark --out runs/receiving/recording.json ^
                   --description "How a warehouse worker receives one line of a purchase order."
 ```
 
-Every tap or Enter that visibly changes the screen raises a popup. Answer it the
+The screen dims and you drag a rectangle over the warehouse app window. Only that
+rectangle is watched and only that rectangle is captured, so the desktop behind it
+never reaches the guide.
+
+Other ways to say where the app is:
+
+| Option | Use it when |
+| --- | --- |
+| `--region select` | The default: drag it out. |
+| `--region "window:Warehouse"` | The window has a stable title. Needs `pip install .[window]`. |
+| `--region 220,140,360,640` | A fixed kiosk layout you script. `whs-recorder region` prints these numbers for you. |
+| `--region full` | You want the whole monitor after all. |
+
+Every tap or Enter that visibly changes that region raises a popup. Answer it the
 way Task Recorder would have answered itself:
 
 | Field | What to put |
@@ -27,7 +37,14 @@ way Task Recorder would have answered itself:
 | Loading / transition screen | Tick for frames you do not want in the guide |
 
 The popup shows the sentence your answers produce, so you can see the guide being
-written as you record.
+written as you record. It opens beside the app, never over it, so it stays out of
+the screenshots.
+
+Each step is captured twice: once at the action, and again over the next couple of
+seconds, keeping the frame that shows the result banner. Screenshots land in a
+folder beside the recording, and `--redact` applies your rules as they are
+written. Give a slow device more room with `--result-window 4.0`, or turn the
+capture off with `--no-screenshots` if you would rather build from a video.
 
 Gestures, mirroring the Task Recorder pane:
 
@@ -73,8 +90,7 @@ edit than to re-record.
 ## 3. Build the task guide
 
 ```
-whs-recorder build --video runs/receiving/receiving.mp4 ^
-                   --markers runs/receiving/recording.json ^
+whs-recorder build --markers runs/receiving/recording.json ^
                    --out runs/receiving/guide ^
                    --redact examples/redaction.sample.json ^
                    --skip-loading
@@ -100,12 +116,27 @@ The evidence style pairs each step's action screenshot with the screenshot of it
 result, and keeps the provenance lines naming the video and the recording. To get
 the result screenshots inside a task guide, use `--with-result`.
 
-## 5. Result messages
+## 5. Building from a screen recording instead
 
-By default the builder scans the 2.5 seconds after each step and picks the frame
-showing the WHS confirmation banner: green for success, red for an error, amber
-for a warning. Give a slow device more room with `--result-window 4.0`. If your
-device theme has no coloured banner, use `--no-toast --result-offsets 0.8,1.5`.
+Some processes are too fast to interrupt with a popup per step, and some evidence
+has to show real elapsed time. Record with `--no-screenshots`, capture the screen
+with whatever you use (Xbox Game Bar, OBS, Teams), and build with a video:
+
+```
+whs-recorder mark --out runs/receiving/recording.json --no-screenshots
+whs-recorder build --video runs/receiving/receiving.mp4 ^
+                   --markers runs/receiving/recording.json ^
+                   --out runs/receiving/guide
+```
+
+The builder picks a legible frame per step and crops it to the app region, so a
+full-screen recording still yields screenshots of the app alone. The recorder
+must start with the screen capture for the timestamps to line up.
+
+For the result screenshot it scans the 2.5 seconds after each step and picks the
+frame showing the WHS confirmation banner: green for success, red for an error,
+amber for a warning. Give a slow device more room with `--result-window 4.0`. If
+your device theme has no coloured banner, use `--no-toast --result-offsets 0.8,1.5`.
 
 ## 6. Redaction
 
@@ -125,6 +156,7 @@ Tune the rules against one screenshot before rebuilding a whole document. See
   "name": "Receive a purchase order line",
   "description": "How a warehouse worker receives one line of a purchase order.",
   "start_epoch": 1772452800.0,
+  "region": {"left": 220, "top": 140, "width": 360, "height": 640, "source": "select"},
   "nodes": [
     {"type": "subtask_start", "t": 0.3, "name": "Receive the line"},
     {
@@ -138,7 +170,10 @@ Tune the rules against one screenshot before rebuilding a whole document. See
       "user_text": "",
       "instruction_label": null,
       "hidden": false,
-      "is_loading": false
+      "is_loading": false,
+      "action_img": "recording_screenshots/step_01_action.png",
+      "result_img": "recording_screenshots/step_01_result.png",
+      "result_toast": "success"
     },
     {"type": "info", "t": 20.1, "text": "Put the pallet in the staging lane"},
     {"type": "subtask_end", "t": 24.0}

@@ -1,9 +1,10 @@
-"""Turn a recording plus a screen capture into a Word document.
+"""Turn a recording into a Word document.
 
-The recording says what happened and in what order; the video supplies the
-pixels. For each recorded step the builder picks the action frame, looks for the
-frame that shows the result banner, applies the redaction rules, and hands the
-lot to one of the writers in `task_guide`.
+The pixels come from one of two places. A recording made with screenshots on
+already carries them, captured from the app region at each step, and the builder
+just redacts and lays them out. Otherwise it falls back to a screen recording:
+for each step it picks the action frame, looks for the frame showing the result
+banner, and crops to the app region if the video covers the whole screen.
 """
 
 import os
@@ -52,10 +53,33 @@ def _result_caption(choice: FrameChoice) -> str:
     return "Result:"
 
 
+def _caption_for_toast(family: str) -> str:
+    if not family:
+        return "Result:"
+    return TOAST_CAPTION.get(family, "Result (message detected):")
+
+
+def _crop_to_region(frame, region):
+    """Crop a video frame to the app region, when the video covers the screen.
+
+    A video that is already the size of the region was captured of the app
+    window itself, and one too small to contain the region is not a full-screen
+    capture either. Both are left alone.
+    """
+    if region is None or frame is None:
+        return frame
+    height, width = frame.shape[:2]
+    if (width, height) == (region.width, region.height):
+        return frame
+    if width < region.right or height < region.bottom:
+        return frame
+    return region.crop(frame)
+
+
 def build_evidence(
-    video: str,
     markers: str,
     out_dir: str,
+    video: str = "",
     title: str = None,
     skip_loading: bool = True,
     result_offsets: List[float] = None,
@@ -87,11 +111,17 @@ def build_evidence(
     if not outline:
         raise RuntimeError("No steps found.")
 
-    cap = cv2.VideoCapture(video)
-    if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {video}")
-
-    fps = cap.get(cv2.CAP_PROP_FPS) or 10.0
+    cap = None
+    fps = 10.0
+    if video:
+        cap = cv2.VideoCapture(video)
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open video: {video}")
+        fps = cap.get(cv2.CAP_PROP_FPS) or 10.0
+    elif not recording.has_screenshots:
+        raise RuntimeError(
+            "This recording holds no screenshots, so a screen recording is needed: pass --video."
+        )
 
     run_stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_out = os.path.join(out_dir, f"run_{run_stamp}")
@@ -111,36 +141,18 @@ def build_evidence(
         step = entry.node
         capture = StepCapture(node_index=entry.node_index, t=step.t)
 
-        action = choose_frame(cap, fps, step.t)
-        capture.action_mode = action.mode
-        if action.frame is not None:
-            capture.action_img = _write_capture(
-                action.frame,
-                os.path.join(run_out, f"step_{entry.number:02d}_action_{action.mode}.jpg"),
-                redaction,
+        if step.action_img:
+            _use_recorded_screenshots(recording, step, entry, capture, run_out, redaction, want_result)
+        elif cap is not None:
+            _use_video_frames(
+                recording, step, entry, capture, run_out, redaction, want_result, cap, fps,
+                result_offsets, result_window, detect_toast,
             )
-
-        if want_result:
-            result = choose_result_frame(
-                cap,
-                fps,
-                step.t,
-                baseline=action.frame,
-                offsets=result_offsets,
-                window_sec=result_window,
-                use_toast_detection=detect_toast,
-            )
-            capture.result_mode = result.mode
-            capture.result_offset = result.offset
-            capture.result_toast = result.toast.family if result.has_toast else None
-            capture.result_caption = _result_caption(result)
-            if result.frame is not None:
-                name = f"step_{entry.number:02d}_result_{result.mode}_plus{result.offset:.1f}s.jpg"
-                capture.result_img = _write_capture(result.frame, os.path.join(run_out, name), redaction)
 
         captures[entry.node_index] = capture
 
-    cap.release()
+    if cap is not None:
+        cap.release()
 
     if style == TASK_GUIDE:
         out_doc = os.path.join(run_out, f"{_slug(title or recording.name)}.docx")
@@ -192,6 +204,66 @@ def build_evidence(
     return out_doc
 
 
+def _use_recorded_screenshots(recording, step, entry, capture, run_out, redaction, want_result) -> None:
+    """Lay out the screenshots the recorder already captured from the app region."""
+    action_frame = cv2.imread(recording.image_path(step.action_img))
+    if action_frame is not None:
+        capture.action_mode = "recorded"
+        capture.action_img = _write_capture(
+            action_frame, os.path.join(run_out, f"step_{entry.number:02d}_action.jpg"), redaction
+        )
+
+    if not want_result or not step.result_img:
+        return
+
+    result_frame = cv2.imread(recording.image_path(step.result_img))
+    if result_frame is None:
+        return
+
+    capture.result_mode = "recorded"
+    capture.result_toast = step.result_toast or None
+    capture.result_caption = _caption_for_toast(step.result_toast)
+    capture.result_img = _write_capture(
+        result_frame, os.path.join(run_out, f"step_{entry.number:02d}_result.jpg"), redaction
+    )
+
+
+def _use_video_frames(recording, step, entry, capture, run_out, redaction, want_result, cap, fps,
+                      result_offsets, result_window, detect_toast) -> None:
+    """Pick this step's frames out of a screen recording."""
+    action = choose_frame(cap, fps, step.t)
+    capture.action_mode = action.mode
+    action_frame = _crop_to_region(action.frame, recording.region)
+    if action_frame is not None:
+        capture.action_img = _write_capture(
+            action_frame,
+            os.path.join(run_out, f"step_{entry.number:02d}_action_{action.mode}.jpg"),
+            redaction,
+        )
+
+    if not want_result:
+        return
+
+    result = choose_result_frame(
+        cap,
+        fps,
+        step.t,
+        baseline=action.frame,
+        offsets=result_offsets,
+        window_sec=result_window,
+        use_toast_detection=detect_toast,
+    )
+    capture.result_mode = result.mode
+    capture.result_offset = result.offset
+    capture.result_toast = result.toast.family if result.has_toast else None
+    capture.result_caption = _result_caption(result)
+
+    result_frame = _crop_to_region(result.frame, recording.region)
+    if result_frame is not None:
+        name = f"step_{entry.number:02d}_result_{result.mode}_plus{result.offset:.1f}s.jpg"
+        capture.result_img = _write_capture(result_frame, os.path.join(run_out, name), redaction)
+
+
 def _write_manifest(path: str, recording, outline, captures, video, markers, run_stamp,
                     redaction_summary, detect_toast, style, value_mode, document) -> str:
     steps = []
@@ -226,7 +298,8 @@ def _write_manifest(path: str, recording, outline, captures, video, markers, run
             {
                 "recording": recording.name,
                 "description": recording.description,
-                "video": os.path.basename(video),
+                "video": os.path.basename(video) if video else "",
+                "region": recording.region.describe() if recording.region else "full screen",
                 "markers": os.path.basename(markers),
                 "generated": run_stamp,
                 "document": os.path.basename(document),

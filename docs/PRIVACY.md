@@ -12,7 +12,8 @@ and no network call in any code path.
 
 | Artefact | Written by | Contains |
 | --- | --- | --- |
-| the recording JSON | `whs-recorder mark` | Timestamps, the action, control and value of each step, your titles and notes, and the screen-change score. No pixels. |
+| the recording JSON | `whs-recorder mark` | Timestamps, the action, control and value of each step, your titles and notes, the screen region being watched, and the screen-change score. No pixels. |
+| `<recording>_screenshots/*.png` | `whs-recorder mark` | The screenshots captured from the app region as you record. |
 | `run_<stamp>/step_*.jpg` | `whs-recorder build` | The screenshots, after redaction. |
 | `run_<stamp>/steps.json` | `whs-recorder build` | The per-step manifest: generated instructions, titles, notes, image paths, which rules were applied. |
 | `run_<stamp>/<recording name>.docx` | `whs-recorder build` | The document, with the redacted screenshots embedded. |
@@ -22,13 +23,21 @@ repeat them ("In the LP field, scan 'LP000123'"). Build with `--values example`
 to replace them with "enter a value" wording, which keeps live data out of a
 guide that will be shared widely.
 
-The source recording is only ever read. Redaction happens before an image is
-written to disk, so no unredacted screenshot is ever created, and the document
-cannot embed one.
+Only the region you selected is ever captured. The rest of the desktop, other
+windows, and a second monitor are never in frame.
 
-The recording itself is **not** redacted. It is your original evidence, and it
-still holds everything that was on screen. Treat the MP4 as confidential, and
-share the generated folder rather than the recording.
+At build time, redaction happens before an image is written, so the run folder
+never holds an unredacted screenshot and the document cannot embed one.
+
+The screenshots the **recorder** writes are a different matter: they are captured
+as they appear, before any build-time rules exist. Pass `--redact` to
+`whs-recorder mark` as well to have the rules applied as each one is written.
+Without it, treat that folder as confidential, exactly like the source recording.
+
+A screen recording, if you use one, is **not** redacted. It is your original
+evidence, and it still holds everything that was on screen, including whatever
+was outside the app region. Treat the MP4 as confidential, and share the
+generated folder rather than the recording.
 
 ## Writing redaction rules
 

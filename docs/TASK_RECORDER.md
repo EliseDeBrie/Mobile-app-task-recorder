@@ -61,7 +61,7 @@ recorded steps and any screenshots that were captured".
 | Preferred / example / user-supplied values | `--values`, and `user_text` per step | Same rules, including "a button has no example label". |
 | Subtasks, info steps, hidden steps | `recording.py` | Same nesting and the same continuous numbering across subtasks. |
 | Title and note annotations | Same names | Rendered above and after the step. |
-| Browser extension screenshots | The screen recording | You record the screen with any tool; frames are selected per step from the video. |
+| Browser extension screenshots | Region capture | There is no tab to photograph: the app is a window on the PC. The recorder captures the app region itself at each step, or falls back to frames from a screen recording. |
 | Word export | `--style task-guide` | Name, description, subtask headings, numbered steps, screenshots. |
 | `.axtr` package | Not reproduced | An `.axtr` is only useful if finance and operations can import it, and a handheld recording cannot be replayed there. Recordings are JSON instead. |
 | Playback, test generation, LCS libraries | Not reproduced | They depend on the client driving real controls. |

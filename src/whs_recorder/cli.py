@@ -6,6 +6,7 @@ from .evidence_builder import EVIDENCE, STYLES, TASK_GUIDE, build_evidence
 from .instructions import EXAMPLE, PREFERRED, VALUE_MODES
 from .recording import SUBTASK_START, Recording
 from .redaction import load_redaction_config
+from .region import resolve_region
 from .utils import ensure_parent_dir
 
 
@@ -17,13 +18,23 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--out", required=True, help="Output recording JSON path")
     m.add_argument("--name", default="", help="Recording name, used as the document title")
     m.add_argument("--description", default="", help="Introduction shown under the title")
-    m.add_argument("--monitor", type=int, default=1, help="Monitor index (1=primary)")
+    m.add_argument("--region", default="select",
+                   help="Part of the screen the app fills: select (drag it out), full, "
+                        "window:<title>, or x,y,width,height")
+    m.add_argument("--monitor", type=int, default=1,
+                   help="Monitor index used when --region is full (1=primary)")
+    m.add_argument("--no-screenshots", action="store_true",
+                   help="Do not capture screenshots while recording; build from a video instead")
+    m.add_argument("--redact", help="Redaction rules JSON applied to screenshots as they are captured")
+    m.add_argument("--result-window", type=float, default=2.5,
+                   help="Seconds to keep watching after a step for the result message")
     m.add_argument("--threshold", type=float, default=7.5, help="Screen change threshold (higher=fewer steps)")
     m.add_argument("--min-gap", type=float, default=0.75, help="Min seconds between steps")
     m.add_argument("--post-delay", type=float, default=0.30, help="Delay after click/enter before diff check")
 
     b = sub.add_parser("build", help="Build a Word document from video + recording")
-    b.add_argument("--video", required=True, help="MP4 input path")
+    b.add_argument("--video", default="",
+                   help="MP4 screen recording, needed only when the recording holds no screenshots")
     b.add_argument("--markers", required=True, help="Recording JSON path")
     b.add_argument("--out", required=True, help="Output folder")
     b.add_argument("--title", default=None, help="Document title (defaults to the recording name)")
@@ -48,6 +59,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="preferred repeats the recorded values, example tells the reader to enter their own")
     v.add_argument("--skip-loading", action="store_true", help="Skip steps flagged as loading")
 
+    g = sub.add_parser("region", help="Drag out a screen region and print it, for scripting")
+    g.add_argument("--window", default="", help="Find the region by window title instead of dragging")
+
     r = sub.add_parser("redact-preview", help="Apply redaction rules to one image, to tune the rules")
     r.add_argument("--image", required=True, help="Screenshot to redact")
     r.add_argument("--redact", required=True, help="Redaction rules JSON")
@@ -65,6 +79,11 @@ def main(argv=None):
         # capture stack (pynput, mss and tkinter are only needed while recording).
         from .marker_recorder import run_marker_recorder
 
+        # "select" is resolved inside the recorder, which owns the one thread
+        # every Tk window has to be created on.
+        spec = (args.region or "").strip()
+        region = None if spec.lower() == "select" else resolve_region(spec)
+
         run_marker_recorder(
             out_path=args.out,
             monitor_index=args.monitor,
@@ -73,6 +92,11 @@ def main(argv=None):
             post_delay_sec=args.post_delay,
             name=args.name,
             description=args.description,
+            region=region,
+            region_spec=spec,
+            capture_screenshots=not args.no_screenshots,
+            result_window=args.result_window,
+            redaction=load_redaction_config(args.redact),
         )
         return
 
@@ -92,6 +116,13 @@ def main(argv=None):
             value_mode=args.values,
             include_result=args.with_result,
         )
+        return
+
+    if args.cmd == "region":
+        region = resolve_region(f"window:{args.window}" if args.window else "select")
+        if region is None:
+            raise SystemExit("No region selected.")
+        print(f"{region.left},{region.top},{region.width},{region.height}")
         return
 
     if args.cmd == "preview":
