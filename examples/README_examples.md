@@ -12,6 +12,9 @@ It reports Python, every package, screen capture and the OCR engines, and for
 anything missing it gives the command to fix it as a plain user. No step in this
 tool needs an administrator.
 
+Its last check prints a test image and reads it back through whichever OCR
+engine is live, so you can see the engine working before you rely on it.
+
 ## 1. Point the recorder at the app
 
 ```

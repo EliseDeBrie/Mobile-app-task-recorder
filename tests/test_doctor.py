@@ -112,3 +112,62 @@ def test_the_python_check_reads_a_windows_install_location(monkeypatch):
 def test_the_python_check_stays_quiet_about_location_off_windows(monkeypatch):
     monkeypatch.setattr(doctor.os, "name", "posix")
     assert "installed" not in doctor.check_python().detail
+
+
+def test_the_check_actually_reads_a_test_image(monkeypatch):
+    """Loading an engine proves nothing; reading something does."""
+    monkeypatch.setattr(ocr, "active_backend", lambda: "windows")
+    monkeypatch.setattr(
+        ocr, "read_lines",
+        lambda frame, *a, **k: [ocr.TextLine("WHS RECORDER 12345", 0, 0, 100, 20, 100.0)],
+    )
+
+    result = doctor.check_ocr_reads()
+
+    assert result.ok is True
+    assert "windows" in result.name
+    assert "WHS RECORDER 12345" in result.detail
+
+
+def test_an_engine_that_reads_gibberish_is_reported(monkeypatch):
+    monkeypatch.setattr(ocr, "active_backend", lambda: "tesseract")
+    monkeypatch.setattr(ocr, "read_lines", lambda frame, *a, **k: [ocr.TextLine("|||", 0, 0, 10, 10)])
+
+    result = doctor.check_ocr_reads()
+
+    assert result.ok is False
+    assert result.optional is True
+    assert "--ocr" in result.remedy
+
+
+def test_an_engine_that_throws_while_reading_is_reported(monkeypatch):
+    monkeypatch.setattr(ocr, "active_backend", lambda: "windows")
+
+    def explode(frame, *a, **k):
+        raise RuntimeError("OCR engine unavailable")
+
+    monkeypatch.setattr(ocr, "read_lines", explode)
+
+    result = doctor.check_ocr_reads()
+
+    assert result.ok is False
+    assert "OCR engine unavailable" in result.detail
+    assert "--no-suggest" in result.remedy
+
+
+def test_the_read_check_is_skipped_without_an_engine(monkeypatch):
+    monkeypatch.setattr(ocr, "active_backend", lambda: "")
+
+    result = doctor.check_ocr_reads()
+
+    assert result.ok is False
+    assert result.optional is True
+    assert "skipped" in result.detail
+
+
+def test_the_test_image_carries_the_text_it_claims():
+    image = doctor.selftest_image()
+
+    assert image.shape[2] == 3
+    assert image.min() < 60   # dark text
+    assert image.max() > 200  # on a light background

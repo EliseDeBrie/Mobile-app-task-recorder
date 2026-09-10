@@ -12,6 +12,9 @@ from typing import List
 
 from . import ocr
 
+#: Printed into a test image and read back, to prove the engine really works.
+SELF_TEST_TEXT = "WHS RECORDER 12345"
+
 MIN_PYTHON = (3, 10)
 
 def _pip(package: str) -> str:
@@ -143,11 +146,57 @@ def check_ocr() -> List[CheckResult]:
     return results
 
 
+def selftest_image():
+    """A plain black-on-white line, of the kind a handheld screen shows."""
+    import cv2
+    import numpy as np
+
+    image = np.full((120, 720, 3), 245, dtype=np.uint8)
+    cv2.putText(image, SELF_TEST_TEXT, (20, 82), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (20, 20, 20), 3,
+                cv2.LINE_AA)
+    return image
+
+
+def check_ocr_reads() -> CheckResult:
+    """Actually read something, rather than trusting that the engine loads.
+
+    On Windows this is the moment the built-in engine is proven, which is worth
+    doing here rather than discovering it mid-recording.
+    """
+    engine = ocr.active_backend()
+    if not engine:
+        return CheckResult(
+            "OCR: reading a test image", False, "skipped, no engine",
+            "the popup will simply open blank", optional=True,
+        )
+
+    try:
+        lines = ocr.read_lines(selftest_image())
+    except Exception as exc:
+        return CheckResult(
+            f"OCR: reading a test image with {engine}", False, f"failed ({exc})",
+            "record with --no-suggest, or switch engines with --ocr", optional=True,
+        )
+
+    read_back = " ".join(line.text for line in lines).upper()
+    found = [part for part in SELF_TEST_TEXT.split() if part in read_back]
+
+    if len(found) >= 2:
+        return CheckResult(f"OCR: reading a test image with {engine}", True, f'read "{read_back}"')
+
+    return CheckResult(
+        f"OCR: reading a test image with {engine}", False,
+        f'read "{read_back}" instead of "{SELF_TEST_TEXT}"',
+        "the engine loads but reads poorly; try the other engine with --ocr", optional=True,
+    )
+
+
 def run_checks() -> List[CheckResult]:
     results = [check_python()]
     results.extend(check_packages())
     results.append(check_screen())
     results.extend(check_ocr())
+    results.append(check_ocr_reads())
     return results
 
 
