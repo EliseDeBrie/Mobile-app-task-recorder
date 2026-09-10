@@ -12,6 +12,8 @@ from pynput import mouse, keyboard
 import tkinter as tk
 from tkinter import ttk
 
+from .utils import ensure_parent_dir, mean_abs_diff
+
 
 @dataclass
 class StepLabel:
@@ -31,9 +33,10 @@ def run_marker_recorder(
     Smart marker recorder with manual step labeling popup.
     """
 
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    ensure_parent_dir(out_path)
 
     start_epoch = time.time()
+    saved = False
     markers = []
     last_mark_t = 0.0
     pressed = set()
@@ -48,9 +51,6 @@ def run_marker_recorder(
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.resize(gray, (160, 90), interpolation=cv2.INTER_AREA)
         return gray
-
-    def mean_abs_diff(a, b):
-        return float(np.mean(np.abs(a.astype(np.float32) - b.astype(np.float32))))
 
     last_sig = grab_signature()
 
@@ -105,6 +105,8 @@ def run_marker_recorder(
         return result[0]
 
     def save_markers():
+        nonlocal saved
+        saved = True
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(
                 {
@@ -196,5 +198,16 @@ def run_marker_recorder(
 
     m_listener.start()
     k_listener.start()
-    k_listener.join()
-    m_listener.stop()
+    try:
+        k_listener.join()
+    except KeyboardInterrupt:
+        k_listener.stop()
+    finally:
+        m_listener.stop()
+        with lock:
+            if pending_timer is not None:
+                pending_timer.cancel()
+                pending_timer = None
+        if not saved:
+            # The recorder was stopped some other way - never lose the markers.
+            save_markers()

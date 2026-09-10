@@ -1,73 +1,40 @@
 import os
 import json
 import datetime
-from typing import List, Tuple, Optional
+from typing import List, Optional
 
 import cv2
-import numpy as np
 from docx import Document
 from docx.shared import Inches
 
+from .frame_select import FrameChoice, choose_frame, choose_result_frame
+from .redaction import RedactionConfig
+from .utils import ensure_dir
 
-def _sharpness(frame) -> float:
-    g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    return cv2.Laplacian(g, cv2.CV_64F).var()
+JPEG_PARAMS = [int(cv2.IMWRITE_JPEG_QUALITY), 92]
 
-
-def _edge_density(frame) -> float:
-    g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    g = cv2.GaussianBlur(g, (3, 3), 0)
-    e = cv2.Canny(g, 60, 140)
-    return float((e > 0).mean())
-
-
-def _get_frame_at(cap, frame_index: int):
-    cap.set(cv2.CAP_PROP_POS_FRAMES, max(int(frame_index), 0))
-    ok, frame = cap.read()
-    return frame if ok else None
+TOAST_CAPTION = {
+    "success": "Result (success message detected):",
+    "error": "Result (error message detected):",
+    "warning": "Result (warning message detected):",
+}
 
 
-def _best_frame_near(cap, fps: float, t_sec: float, window_sec: float,
-                     sharp_min: float, edge_min: float) -> Optional[np.ndarray]:
-    center = int(t_sec * fps)
-    radius = max(int(window_sec * fps), 1)
-    step = max(int(fps // 4), 1)
-
-    best = None
-    best_score = -1.0
-
-    for fi in range(max(center - radius, 0), center + radius + 1, step):
-        frame = _get_frame_at(cap, fi)
-        if frame is None:
-            continue
-
-        s = _sharpness(frame)
-        ed = _edge_density(frame)
-        if s < sharp_min or ed < edge_min:
-            continue
-
-        score = s * (1.0 + 10.0 * ed)
-        if score > best_score:
-            best_score = score
-            best = frame
-
-    return best
+def _write_capture(
+    frame,
+    path: str,
+    redaction: Optional[RedactionConfig],
+) -> str:
+    if redaction is not None:
+        frame = redaction.apply(frame)
+    cv2.imwrite(path, frame, JPEG_PARAMS)
+    return path
 
 
-def _choose_frame(cap, fps: float, t_sec: float) -> Tuple[Optional[np.ndarray], str]:
-    # strict
-    f = _best_frame_near(cap, fps, t_sec, window_sec=1.8, sharp_min=65, edge_min=0.012)
-    if f is not None:
-        return f, "strict"
-    # relaxed
-    f = _best_frame_near(cap, fps, t_sec, window_sec=2.5, sharp_min=35, edge_min=0.008)
-    if f is not None:
-        return f, "relaxed"
-    # exact fallback
-    f = _get_frame_at(cap, int(t_sec * fps))
-    if f is not None:
-        return f, "exact"
-    return None, "none"
+def _result_caption(choice: FrameChoice) -> str:
+    if choice.has_toast:
+        return TOAST_CAPTION.get(choice.toast.family, "Result (message detected):")
+    return "Result:"
 
 
 def build_evidence(
@@ -77,6 +44,9 @@ def build_evidence(
     title: str = "WHS Mobile – Test Evidence",
     skip_loading: bool = True,
     result_offsets: List[float] = None,
+    redaction: Optional[RedactionConfig] = None,
+    result_window: float = 2.5,
+    detect_toast: bool = True,
 ):
     """
     Builds a Word doc from:
@@ -85,12 +55,14 @@ def build_evidence(
 
     For each marker:
       - capture 1 "action" screenshot around marker time
-      - capture 1 "result" screenshot slightly AFTER marker (offsets)
+      - capture 1 "result" screenshot after the marker, preferring a frame that
+        shows a result banner (toast) when `detect_toast` is on
+      - apply the redaction rules, if any, before anything is written to disk
     """
     if result_offsets is None:
         result_offsets = [0.6, 1.2]
 
-    os.makedirs(out_dir, exist_ok=True)
+    ensure_dir(out_dir)
 
     with open(markers, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -106,7 +78,10 @@ def build_evidence(
 
     run_stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_out = os.path.join(out_dir, f"evidence_{run_stamp}")
-    os.makedirs(run_out, exist_ok=True)
+    ensure_dir(run_out)
+
+    if redaction is not None and not redaction.is_empty():
+        print(f"Redaction active: {redaction.describe()}")
 
     captures = []  # list of dicts per step
 
@@ -121,34 +96,30 @@ def build_evidence(
         notes = (m.get("notes") or "").strip()
 
         # ACTION frame near marker
-        action_frame, action_mode = _choose_frame(cap, fps, t)
+        action = choose_frame(cap, fps, t)
         action_path = None
-        if action_frame is not None:
-            action_path = os.path.join(run_out, f"step_{step_no:02d}_action_{action_mode}.jpg")
-            cv2.imwrite(action_path, action_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+        if action.frame is not None:
+            action_path = _write_capture(
+                action.frame,
+                os.path.join(run_out, f"step_{step_no:02d}_action_{action.mode}.jpg"),
+                redaction,
+            )
 
-        # RESULT frame AFTER marker (to catch toast/success message)
-        best_result = None
-        best_meta = ("none", None)
-        for off in result_offsets:
-            f, mode = _choose_frame(cap, fps, t + off)
-            if f is None:
-                continue
-            score = _sharpness(f) * (1.0 + 10.0 * _edge_density(f))
-            if best_result is None:
-                best_result = f
-                best_meta = (mode, off)
-            else:
-                prev_score = _sharpness(best_result) * (1.0 + 10.0 * _edge_density(best_result))
-                if score > prev_score:
-                    best_result = f
-                    best_meta = (mode, off)
+        # RESULT frame AFTER marker (to catch the toast / success message)
+        result = choose_result_frame(
+            cap,
+            fps,
+            t,
+            baseline=action.frame,
+            offsets=result_offsets,
+            window_sec=result_window,
+            use_toast_detection=detect_toast,
+        )
 
         result_path = None
-        if best_result is not None:
-            mode, off = best_meta
-            result_path = os.path.join(run_out, f"step_{step_no:02d}_result_{mode}_plus{off:.1f}s.jpg")
-            cv2.imwrite(result_path, best_result, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+        if result.frame is not None:
+            name = f"step_{step_no:02d}_result_{result.mode}_plus{result.offset:.1f}s.jpg"
+            result_path = _write_capture(result.frame, os.path.join(run_out, name), redaction)
 
         captures.append({
             "no": step_no,
@@ -157,6 +128,10 @@ def build_evidence(
             "notes": notes,
             "action_img": action_path,
             "result_img": result_path,
+            "result_mode": result.mode,
+            "result_offset": result.offset,
+            "result_toast": result.toast.family if result.has_toast else None,
+            "result_caption": _result_caption(result),
         })
 
     cap.release()
@@ -167,6 +142,8 @@ def build_evidence(
     doc.add_paragraph(f"Video: {os.path.basename(video)}")
     doc.add_paragraph(f"Markers: {os.path.basename(markers)}")
     doc.add_paragraph("Per step: action screenshot + result screenshot (after marker) when available.")
+    if redaction is not None and not redaction.is_empty():
+        doc.add_paragraph(f"Redaction applied to every screenshot: {redaction.describe()}.")
 
     doc.add_heading("Steps", level=2)
 
@@ -181,10 +158,29 @@ def build_evidence(
             doc.add_picture(c["action_img"], width=Inches(6.3))
 
         if c["result_img"]:
-            doc.add_paragraph("Result:")
+            doc.add_paragraph(c["result_caption"])
             doc.add_picture(c["result_img"], width=Inches(6.3))
 
     out_doc = os.path.join(run_out, "WHS_Test_Evidence.docx")
     doc.save(out_doc)
+
+    manifest = os.path.join(run_out, "steps.json")
+    with open(manifest, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "video": os.path.basename(video),
+                "markers": os.path.basename(markers),
+                "generated": run_stamp,
+                "redaction": redaction.describe() if redaction is not None else "none",
+                "toast_detection": detect_toast,
+                "steps": captures,
+            },
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+    toasts = sum(1 for c in captures if c["result_toast"])
+    print(f"Captured {len(captures)} step(s); result message detected on {toasts}.")
     print("Created:", out_doc)
     return out_doc
