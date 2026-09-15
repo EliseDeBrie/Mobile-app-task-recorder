@@ -393,7 +393,9 @@ def release_console() -> None:
         for stream in ("stdout", "stderr"):
             with contextlib.suppress(Exception):
                 getattr(sys, stream).close()
-            setattr(sys, stream, open(os.devnull, "w", encoding="utf-8"))
+            # Deliberately left open: it stands in for the stream for the
+            # rest of the run, so it cannot be closed at the end of a block.
+            setattr(sys, stream, open(os.devnull, "w", encoding="utf-8"))  # noqa: SIM115
 
         ctypes.windll.kernel32.FreeConsole()
     except Exception:
