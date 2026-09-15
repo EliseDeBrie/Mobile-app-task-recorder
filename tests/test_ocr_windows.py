@@ -291,3 +291,104 @@ def test_an_empty_result_is_not_a_failure(monkeypatch, frame):
     fake_winrt(monkeypatch, lines=[])
 
     assert ocr._read_windows(frame, min_confidence=40.0) == []
+
+
+# --------------------------------------------------------------------------
+# The two WinRT packagings expose CreateCopyFromBuffer's alpha-mode form
+# differently. Getting this wrong is not theoretical: the first run on a real
+# Windows machine failed with "Invalid parameter count" because the call was
+# written for winsdk and the winrt-* packages were installed.
+# --------------------------------------------------------------------------
+
+
+class Imaging:
+    """A stand-in for the imaging namespace, in either packaging's shape."""
+
+    def __init__(self, packaging):
+        self.calls = []
+        self.BitmapPixelFormat = types.SimpleNamespace(BGRA8=BGRA8, GRAY8=62)
+        self.BitmapAlphaMode = types.SimpleNamespace(
+            PREMULTIPLIED=0, STRAIGHT=1, IGNORE=ALPHA_IGNORE
+        )
+
+        calls = self.calls
+
+        class SoftwareBitmap:
+            @staticmethod
+            def create_copy_from_buffer(buffer, fmt, width, height, alpha=None):
+                if alpha is not None:
+                    if packaging == "winrt":
+                        # What the real binding does: it only has four.
+                        raise RuntimeError("Invalid parameter count")
+                    calls.append(("create_copy_from_buffer", 5, alpha))
+                    return "bitmap"
+                calls.append(("create_copy_from_buffer", 4, None))
+                return "bitmap"
+
+        if packaging == "winrt":
+            def create_copy_with_alpha_from_buffer(buffer, fmt, width, height, alpha):
+                calls.append(("create_copy_with_alpha_from_buffer", 5, alpha))
+                return "bitmap"
+
+            SoftwareBitmap.create_copy_with_alpha_from_buffer = staticmethod(
+                create_copy_with_alpha_from_buffer
+            )
+
+        self.SoftwareBitmap = SoftwareBitmap
+
+
+def test_the_winrt_packaging_uses_the_method_it_actually_has():
+    """winrt-* renames the five-argument form rather than overloading."""
+    imaging = Imaging("winrt")
+
+    assert ocr.software_bitmap(imaging, b"", 360, 640) == "bitmap"
+    assert imaging.calls == [("create_copy_with_alpha_from_buffer", 5, ALPHA_IGNORE)]
+
+
+def test_the_winsdk_packaging_still_uses_its_overload():
+    imaging = Imaging("winsdk")
+
+    assert ocr.software_bitmap(imaging, b"", 360, 640) == "bitmap"
+    assert imaging.calls == [("create_copy_from_buffer", 5, ALPHA_IGNORE)]
+
+
+def test_a_packaging_with_neither_falls_back_to_four_arguments():
+    """Still correct: the alpha the BGR conversion added is fully opaque."""
+    imaging = Imaging("winrt")
+    del imaging.SoftwareBitmap.create_copy_with_alpha_from_buffer
+
+    assert ocr.software_bitmap(imaging, b"", 360, 640) == "bitmap"
+    assert imaging.calls[-1] == ("create_copy_from_buffer", 4, None)
+
+
+def test_the_alpha_channel_is_always_ignored():
+    """A screenshot is opaque; premultiplied alpha would be the wrong answer."""
+    for packaging in ("winrt", "winsdk"):
+        imaging = Imaging(packaging)
+        ocr.software_bitmap(imaging, b"", 10, 10)
+        assert imaging.calls[0][2] == ALPHA_IGNORE
+
+
+def test_a_reader_failure_is_remembered_for_the_report(monkeypatch, frame):
+    """The reader swallows engine failures so a recording survives them, so the
+    reason has to be kept or the report invents one."""
+    backends = fake_winrt(monkeypatch)  # noqa: F841
+    monkeypatch.setattr(ocr, "windows_status", lambda: ocr.BackendStatus(ocr.WINDOWS, True))
+
+    def explode(frame, confidence):
+        raise RuntimeError("Invalid parameter count")
+
+    monkeypatch.setitem(ocr.READERS, ocr.WINDOWS, explode)
+
+    assert ocr.read_words(frame) == []
+    assert ocr.last_error() == "Invalid parameter count"
+
+
+def test_a_reader_that_works_clears_the_last_failure(monkeypatch, frame):
+    fake_winrt(monkeypatch)
+    monkeypatch.setitem(ocr._state, "last_error", "an older failure")
+
+    assert ocr._read_windows(frame, 40.0)
+    ocr.read_words(frame)
+
+    assert ocr.last_error() == ""

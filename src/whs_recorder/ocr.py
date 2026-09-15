@@ -36,7 +36,12 @@ PORTABLE_DIRS = (
     os.path.join(os.path.dirname(os.path.abspath(sys.argv[0] or ".")), "tesseract"),
 )
 
-_state: Dict[str, object] = {"tesseract_path": "", "prefer": "", "warned": False}
+_state: Dict[str, object] = {"tesseract_path": "", "prefer": "", "warned": False, "last_error": ""}
+
+
+def last_error() -> str:
+    """Why the last read failed, or an empty string if it did not."""
+    return str(_state.get("last_error") or "")
 
 
 @dataclass
@@ -88,6 +93,7 @@ def configure(tesseract_path: str = "", prefer: str = "") -> None:
     if prefer:
         _state["prefer"] = prefer.strip().lower()
     _state["warned"] = False
+    _state["last_error"] = ""
 
 
 def _warn_once(message: str) -> None:
@@ -162,6 +168,31 @@ def wait_for_operation(operation, timeout: float = WINDOWS_TIMEOUT_SEC):
     return operation.get_results()
 
 
+def software_bitmap(imaging, buffer, width: int, height: int):
+    """Wrap a BGRA buffer as a SoftwareBitmap, across both WinRT packagings.
+
+    The two packagings expose the alpha-mode form of CreateCopyFromBuffer
+    differently. winsdk overloads `create_copy_from_buffer` on its arity; the
+    winrt-* packages give the five-argument form a name of its own,
+    `create_copy_with_alpha_from_buffer`, and reject the five-argument call with
+    "Invalid parameter count". A screenshot is opaque, so ignoring the alpha
+    channel is what we want; falling back to the four-argument form is still
+    correct, since the alpha the BGR conversion added is fully opaque anyway.
+    """
+    bitmap = imaging.SoftwareBitmap
+    pixel_format = imaging.BitmapPixelFormat.BGRA8
+    ignore_alpha = imaging.BitmapAlphaMode.IGNORE
+
+    with_alpha = getattr(bitmap, "create_copy_with_alpha_from_buffer", None)
+    if with_alpha is not None:
+        return with_alpha(buffer, pixel_format, width, height, ignore_alpha)
+
+    try:
+        return bitmap.create_copy_from_buffer(buffer, pixel_format, width, height, ignore_alpha)
+    except Exception:
+        return bitmap.create_copy_from_buffer(buffer, pixel_format, width, height)
+
+
 def _read_windows(frame, min_confidence: float) -> List[TextLine]:
     """Read a frame with the OCR engine built into Windows."""
     modules = winrt_modules()
@@ -182,14 +213,7 @@ def _read_windows(frame, min_confidence: float) -> List[TextLine]:
     with memoryview(buffer) as view:
         view[:] = data
 
-    bitmap = imaging.SoftwareBitmap.create_copy_from_buffer(
-        buffer,
-        imaging.BitmapPixelFormat.BGRA8,
-        width,
-        height,
-        # A screenshot is opaque, so the alpha channel carries nothing.
-        imaging.BitmapAlphaMode.IGNORE,
-    )
+    bitmap = software_bitmap(imaging, buffer, width, height)
 
     result = wait_for_operation(engine.recognize_async(bitmap))
 
@@ -360,10 +384,14 @@ def read_words(frame, min_confidence: float = DEFAULT_MIN_CONFIDENCE) -> List[Te
         return []
 
     try:
-        return READERS[backend](frame, min_confidence)
+        words = READERS[backend](frame, min_confidence)
     except Exception as exc:  # a broken install should not stop a recording
+        _state["last_error"] = f"{exc}"
         _warn_once(f"the {backend} OCR engine failed ({exc}) - text features are skipped.")
         return []
+
+    _state["last_error"] = ""
+    return words
 
 
 #: Kept for callers that read word boxes rather than lines.
