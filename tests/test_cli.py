@@ -1,3 +1,4 @@
+import io
 import json
 
 import cv2
@@ -272,27 +273,119 @@ def test_a_command_given_on_the_command_line_does_not_open_a_window(monkeypatch)
     cli.main(["check"])
 
 
-def test_the_console_is_released_only_when_packaged(monkeypatch):
-    """Run from a checkout there is no console of ours to let go of, and the
-    terminal the person is working in must be left alone."""
+def test_a_working_stream_is_never_taken_over(monkeypatch):
+    """The launcher runs these commands as children and hands them pipes.
+    Rebinding those to a console would send their output to a window instead of
+    to the log pane."""
+    import whs_recorder.app as app
+
+    monkeypatch.setattr(app.os, "name", "nt")
+    monkeypatch.setattr(app.sys, "frozen", True, raising=False)
+
+    attached = []
+    monkeypatch.setattr(app, "borrow_parent_console", app.borrow_parent_console)
+
+    stdout_before = app.sys.stdout
+    app.borrow_parent_console()
+
+    assert app.sys.stdout is stdout_before
+    assert attached == []
+
+
+def test_nothing_is_borrowed_from_a_checkout(monkeypatch):
+    """Unpackaged, Python already gave us usable streams."""
     import whs_recorder.app as app
 
     monkeypatch.setattr(app.os, "name", "nt")
     monkeypatch.setattr(app.sys, "frozen", False, raising=False)
 
     stdout_before = app.sys.stdout
-    app.release_console()
+    app.borrow_parent_console()
 
     assert app.sys.stdout is stdout_before
 
 
-def test_the_console_is_left_alone_away_from_windows(monkeypatch):
+def test_nothing_is_borrowed_away_from_windows(monkeypatch):
     import whs_recorder.app as app
 
     monkeypatch.setattr(app.os, "name", "posix")
     monkeypatch.setattr(app.sys, "frozen", True, raising=False)
 
     stdout_before = app.sys.stdout
-    app.release_console()
+    app.borrow_parent_console()
 
     assert app.sys.stdout is stdout_before
+
+
+class _FakeKernel:
+    def __init__(self, attaches: bool):
+        self.attaches = attaches
+        self.calls = []
+
+    def AttachConsole(self, which):  # noqa: N802 - the Windows API spells it this way
+        self.calls.append(which)
+        return 1 if self.attaches else 0
+
+
+def _fake_ctypes(monkeypatch, attaches: bool):
+    import types as _types
+
+    kernel = _FakeKernel(attaches)
+    fake = _types.ModuleType("ctypes")
+    fake.windll = _types.SimpleNamespace(kernel32=kernel)
+    monkeypatch.setitem(cli.sys.modules, "ctypes", fake)
+    return kernel
+
+
+def _fake_console_open(monkeypatch):
+    """Stand in for opening the console device, which does not exist here."""
+    import builtins
+
+    opened = []
+    real_open = builtins.open
+
+    def fake_open(name, *args, **kwargs):
+        if name == "CONOUT$":
+            opened.append(name)
+            return io.StringIO()
+        return real_open(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    return opened
+
+
+def test_a_command_started_from_a_terminal_prints_into_it(monkeypatch):
+    """Windowed programs have nowhere to print, which would leave the command
+    line mute. Started from a terminal it borrows that terminal's console."""
+    import whs_recorder.app as app
+
+    monkeypatch.setattr(app.os, "name", "nt")
+    monkeypatch.setattr(app.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app.sys, "stdout", None)
+    monkeypatch.setattr(app.sys, "stderr", None)
+    kernel = _fake_ctypes(monkeypatch, attaches=True)
+    opened = _fake_console_open(monkeypatch)
+
+    app.borrow_parent_console()
+
+    assert kernel.calls == [-1]  # ATTACH_PARENT_PROCESS
+    assert opened == ["CONOUT$", "CONOUT$"]
+    assert app.sys.stdout is not None and app.sys.stderr is not None
+
+
+def test_started_from_explorer_there_is_no_terminal_to_borrow(monkeypatch):
+    """Double-clicked, there is no parent console and nothing should be opened."""
+    import whs_recorder.app as app
+
+    monkeypatch.setattr(app.os, "name", "nt")
+    monkeypatch.setattr(app.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app.sys, "stdout", None)
+    monkeypatch.setattr(app.sys, "stderr", None)
+    kernel = _fake_ctypes(monkeypatch, attaches=False)
+    opened = _fake_console_open(monkeypatch)
+
+    app.borrow_parent_console()
+
+    assert kernel.calls == [-1]
+    assert opened == []
+    assert app.sys.stdout is None

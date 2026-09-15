@@ -102,6 +102,11 @@ def main(argv=None):
         open_launcher()
         return None
 
+    # Running as a command: borrow the terminal's console so output is visible.
+    from .app import borrow_parent_console
+
+    borrow_parent_console()
+
     args = build_parser().parse_args(argv)
     try:
         return run(args)
