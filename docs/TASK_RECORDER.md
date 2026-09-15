@@ -95,13 +95,17 @@ Property steps:
 | `Checkbox_Value_Example` | `Select or clear the %1 field.` |
 
 A checkbox renders its value as Select or Clear rather than True or False, which
-is the improvement Microsoft's own documentation uses as its worked example.
+is the improvement the product documentation uses as its worked example.
 
 To change the wording for every step of a kind, edit `INSTRUCTION_LABELS` in
 `instructions.py`. To change one step, set `instruction_label` on it, either to a
 label ID or to a template of your own such as `"Press %1 twice."`.
 
 ## Sources
+
+Where this tool's behaviour was taken from the published documentation of the
+finance and operations apps, the articles are listed so the mapping can be
+checked. Linking them implies no affiliation.
 
 - [Task recorder resources](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/user-interface/task-recorder)
 - [Control the text that Task Recorder generates for a control](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/user-interface/task-recorder-control-text)

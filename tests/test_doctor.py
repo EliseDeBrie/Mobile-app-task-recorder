@@ -106,7 +106,7 @@ def test_the_python_check_reads_a_windows_install_location(monkeypatch):
         doctor.sys, "prefix",
         r"C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.100.0_x64__qbz5n2kfra8p0",
     )
-    assert "Microsoft Store" in doctor.check_python().detail
+    assert "Store" in doctor.check_python().detail
 
 
 def test_the_python_check_stays_quiet_about_location_off_windows(monkeypatch):

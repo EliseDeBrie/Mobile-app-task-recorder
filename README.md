@@ -4,6 +4,9 @@
 # Mobile-app-task-recorder
 Offline evidence builder for D365 WMS mobile processes. Generates Task Recorder–style documentation from screen recordings using smart interaction markers, OCR, and automated Word output. Designed for consultants and implementation teams.
 
+An independent tool from D365Solutions. It is not affiliated with, nor endorsed
+by, the vendors of the products it works alongside.
+
 Finance and operations apps have Task Recorder. The WHS mobile app does not.
 This tool fills that gap: it records what you do on the handheld and produces the
 same kind of task guide, down to how the step sentences are generated. See
@@ -26,10 +29,10 @@ no tab for an extension to photograph, which is how Task Recorder gets its
 screenshots. Watching one region solves the other half of the problem too: the
 clock and the taskbar can no longer trigger steps of their own.
 
-The Warehouse Management mobile app is installed from the Microsoft Store or
+The Warehouse Management mobile app is installed from an app store or
 sideloaded, on Windows, Android and iOS. A browser extension cannot see any of
 them, since extensions only ever see browser tabs. The one exception is the
-browser-based emulator inside Supply Chain Management, which Microsoft's own
+browser-based emulator inside Supply Chain Management, which the product
 documentation warns is not a substitute for the real app.
 
 Nothing leaves the machine. There is no telemetry and no network call.
@@ -50,7 +53,7 @@ None of this needs an administrator, which matters on a customer's machine:
 
 | Piece | How to get it as a plain user |
 | --- | --- |
-| Python | Clear "Install for all users" in the installer, or use the Microsoft Store build |
+| Python | Clear "Install for all users" in the installer, or use the Store build |
 | The packages | `pip install --user` |
 | OCR | `.[ocr-windows]` uses the engine already in Windows; only wheels are installed |
 | Tesseract, if you prefer it | Unpack a portable copy and pass `--tesseract`, or put it in `%LOCALAPPDATA%\whs-recorder\tesseract` |
