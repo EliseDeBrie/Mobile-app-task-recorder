@@ -83,7 +83,7 @@ def check_python() -> CheckResult:
         return CheckResult(
             "Python", False, f"{version} is too old",
             f"install Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or later for your user only "
-            "(clear 'Install for all users', or use the Microsoft Store build)",
+            "(clear 'Install for all users', or use the Store build)",
         )
 
     if os.name != "nt":
@@ -91,7 +91,7 @@ def check_python() -> CheckResult:
 
     prefix = (sys.prefix or "").lower()
     if "windowsapps" in prefix:
-        where = "installed from the Microsoft Store, for this user"
+        where = "installed from the Store, for this user"
     elif "program files" in prefix:
         where = "installed for all users, which took an administrator once"
     else:
