@@ -36,6 +36,11 @@ jobs:
   build:
     runs-on: windows-latest
     needs: test
+    permissions:
+      # Creating the release and attaching the executable to it is a write.
+      # Without this the tag build gets "Resource not accessible by
+      # integration" from the releases API and the tag produces nothing.
+      contents: write
     steps:
       - uses: actions/checkout@v7
 
