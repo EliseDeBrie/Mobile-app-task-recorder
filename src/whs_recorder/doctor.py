@@ -146,14 +146,34 @@ def check_screen() -> CheckResult:
 
 
 def check_ocr() -> List[CheckResult]:
+    """Report the OCR engines, without nagging about one that is not needed.
+
+    Two engines can do this job and one is plenty. Listing the spare one with
+    instructions to install it reads like a problem to fix, when the only thing
+    that matters is whether some engine works.
+    """
     results = []
     active = ocr.active_backend()
+
     for status in ocr.statuses():
-        note = status.detail
         if status.ready and status.name == active:
-            note = f"{note} - in use"
+            results.append(
+                CheckResult(f"OCR: {status.name}", True, f"{status.detail} - in use", optional=True)
+            )
+            continue
+
+        if active:
+            # Something else is doing the reading, so this one is spare.
+            results.append(
+                CheckResult(
+                    f"OCR: {status.name}", True,
+                    f"not needed, {active} is doing the reading", optional=True,
+                )
+            )
+            continue
+
         results.append(
-            CheckResult(f"OCR: {status.name}", status.ready, note, status.remedy, optional=True)
+            CheckResult(f"OCR: {status.name}", status.ready, status.detail, status.remedy, optional=True)
         )
 
     if not active:
