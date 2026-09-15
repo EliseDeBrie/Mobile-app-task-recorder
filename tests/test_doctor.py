@@ -225,3 +225,27 @@ def test_a_package_missing_one_of_its_own_dependencies_is_reported_as_broken(mon
 
     assert state == "broken"
     assert "pyrect" in detail
+
+
+def test_an_engine_that_raised_is_not_called_a_poor_reader(monkeypatch):
+    """The first Windows run reported "reads poorly" when the engine had in fact
+    failed outright, which sent the reader looking for the wrong problem."""
+    monkeypatch.setattr(ocr, "active_backend", lambda: "windows")
+    monkeypatch.setattr(ocr, "read_lines", lambda frame, *a, **k: [])
+    monkeypatch.setattr(ocr, "last_error", lambda: "Invalid parameter count")
+
+    result = doctor.check_ocr_reads()
+
+    assert result.ok is False
+    assert "the engine failed: Invalid parameter count" in result.detail
+    assert "reads poorly" not in result.detail
+
+
+def test_an_engine_that_simply_reads_badly_still_says_so(monkeypatch):
+    monkeypatch.setattr(ocr, "active_backend", lambda: "tesseract")
+    monkeypatch.setattr(ocr, "read_lines", lambda frame, *a, **k: [ocr.TextLine("|||", 0, 0, 9, 9)])
+    monkeypatch.setattr(ocr, "last_error", lambda: "")
+
+    result = doctor.check_ocr_reads()
+
+    assert "reads poorly" in result.remedy

@@ -206,6 +206,16 @@ def check_ocr_reads() -> CheckResult:
     if len(found) >= 2:
         return CheckResult(f"OCR: reading a test image with {engine}", True, f'read "{read_back}"')
 
+    # The reader swallows engine failures so a recording survives them, so ask
+    # why it came back empty rather than calling a broken engine a poor reader.
+    failure = ocr.last_error()
+    if failure:
+        return CheckResult(
+            f"OCR: reading a test image with {engine}", False,
+            f"the engine failed: {failure}",
+            "record with --no-suggest, or switch engines with --ocr", optional=True,
+        )
+
     return CheckResult(
         f"OCR: reading a test image with {engine}", False,
         f'read "{read_back}" instead of "{SELF_TEST_TEXT}"',
