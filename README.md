@@ -42,7 +42,12 @@ Nothing leaves the machine. There is no telemetry and no network call.
 Download **WHS Task Recorder.exe** from the
 [latest release](https://github.com/D365Solutions/Mobile-app-task-recorder/releases/latest)
 and run it. There is nothing else to install: no Python, no packages, no
-terminal. Double-clicking opens a window with everything in it.
+terminal. Double-clicking opens a window with everything in it, and no console
+window appears at any point.
+
+The same file is also the command line. Run it from a terminal with arguments
+and it prints into that terminal, which is how the options the window does not
+offer are reached.
 
 Windows warns that a downloaded program is unsigned the first time you run it.
 Choose **More info**, then **Run anyway**. Signing the program would remove that

@@ -1,9 +1,9 @@
 # PyInstaller build: one file, no Python install needed on the machine.
 #
-# Built as a console application on purpose. The launcher hides that console
-# the moment it opens a window, and keeping it means the commands the launcher
-# runs for itself have somewhere to write, which is how their output reaches
-# the log pane.
+# Built as a windowed application: double-clicking it opens the launcher with
+# no console at all. Run as a command it attaches to the terminal it was
+# started from, and the commands the launcher runs for itself are handed pipes,
+# so their output still reaches the log pane.
 
 from PyInstaller.utils.hooks import collect_submodules
 
@@ -67,6 +67,8 @@ exe = EXE(
     strip=False,
     upx=False,
     runtime_tmpdir=None,
-    console=True,
+    # Windowed: double-clicking opens the launcher and never a console.
+    # Run as a command, it attaches to the terminal it was started from.
+    console=False,
     disable_windowed_traceback=False,
 )

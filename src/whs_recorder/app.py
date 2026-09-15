@@ -366,45 +366,44 @@ class Launcher:
         self.root.mainloop()
 
 
-def release_console() -> None:
-    """Let go of the console the packaged program was started in.
+def borrow_parent_console() -> None:
+    """Print into the terminal this was started from, if there was one.
 
-    The program is built as a console application so that the commands the
-    launcher runs for itself have somewhere to write. Once the window is open
-    that console is in the way, and hiding it is not enough: the program stays
-    attached to it, so closing it takes the program down too.
+    The program is built as a windowed one, so double-clicking it opens the
+    launcher and never a console: nothing flashes, and there is no black window
+    to close or to take the program down with it.
 
-    Detaching cuts that tie. Double-clicked, the console was ours alone and it
-    closes with us gone. Started from a terminal, the terminal keeps running
-    because the shell is still attached to it. Hiding the window did the wrong
-    thing there, hiding the terminal the person was working in.
+    The cost of that is having nowhere to print, which would leave the command
+    line mute. So when it is started from a terminal it attaches to that
+    terminal's console and prints there, the way a well-behaved Windows program
+    does.
 
-    The commands the launcher runs are unaffected: they are handed pipes of
-    their own and never needed this console.
+    Streams that already work are left alone. The launcher runs these same
+    commands as child processes and hands them pipes; rebinding those to a
+    console would send their output to a window instead of to the log pane.
     """
     if os.name != "nt" or not getattr(sys, "frozen", False):
         return
+    if sys.stdout is not None and sys.stderr is not None:
+        return  # already writing somewhere real, most likely a pipe
 
     try:
         import ctypes
 
-        # Our own streams point at the console being let go of, and writing to
-        # a handle that is gone raises.
-        for stream in ("stdout", "stderr"):
-            with contextlib.suppress(Exception):
-                getattr(sys, stream).close()
-            # Deliberately left open: it stands in for the stream for the
-            # rest of the run, so it cannot be closed at the end of a block.
-            setattr(sys, stream, open(os.devnull, "w", encoding="utf-8"))  # noqa: SIM115
+        attach_parent = -1
+        if not ctypes.windll.kernel32.AttachConsole(attach_parent):
+            return  # started from Explorer: there is no terminal to print in
 
-        ctypes.windll.kernel32.FreeConsole()
+        if sys.stdout is None:
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)  # noqa: SIM115
+        if sys.stderr is None:
+            sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)  # noqa: SIM115
     except Exception:
-        pass  # no console to let go of is not a reason to refuse to start
+        pass  # printing is a convenience; failing to do it must not stop the run
 
 
 def main() -> None:
     """Open the launcher window."""
-    release_console()
     Launcher().run()
 
 
