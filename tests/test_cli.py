@@ -240,3 +240,33 @@ def test_the_version_is_reported(capsys):
         cli.main(["--version"])
 
     assert __version__ in capsys.readouterr().out
+
+
+def test_no_arguments_at_all_opens_the_launcher(monkeypatch):
+    """What double-clicking the program does. A console usage message there
+    would be shouting at a window nobody opened."""
+    import whs_recorder.app as app
+
+    opened = []
+    monkeypatch.setattr(app, "main", lambda: opened.append(True))
+    monkeypatch.setattr(cli.sys, "argv", ["whs-recorder"])
+
+    assert cli.main() is None
+    assert opened == [True]
+
+
+def test_an_explicit_empty_argument_list_still_shows_usage(monkeypatch):
+    """Called as a library with no command, argparse should still complain."""
+    monkeypatch.setattr(cli.sys, "argv", ["whs-recorder"])
+
+    with pytest.raises(SystemExit):
+        cli.main([])
+
+
+def test_a_command_given_on_the_command_line_does_not_open_a_window(monkeypatch):
+    import whs_recorder.app as app
+
+    monkeypatch.setattr(app, "main", lambda: pytest.fail("should not open the launcher"))
+    monkeypatch.setattr(cli.sys, "argv", ["whs-recorder", "check"])
+
+    cli.main(["check"])

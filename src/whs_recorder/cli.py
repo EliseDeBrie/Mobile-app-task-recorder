@@ -1,5 +1,5 @@
 import argparse
-
+import sys
 
 from . import __version__, doctor, ocr
 from .evidence_builder import STYLES, TASK_GUIDE, build_evidence
@@ -91,7 +91,17 @@ def main(argv=None):
 
     A consultant on a customer machine should see what went wrong, not a stack
     trace; anything unexpected still raises, so a real defect stays visible.
+
+    Started with no arguments at all - which is what double-clicking the
+    program does - it opens the launcher window instead of printing usage at a
+    console nobody asked for.
     """
+    if argv is None and len(sys.argv) == 1:
+        from .app import main as open_launcher
+
+        open_launcher()
+        return None
+
     args = build_parser().parse_args(argv)
     try:
         return run(args)

@@ -35,6 +35,11 @@ dev = ["pytest"]
 [project.scripts]
 whs-recorder = "whs_recorder.cli:main"
 
+# The same program without a console window, for a desktop or Start menu
+# shortcut. Double-clicking either one opens the launcher.
+[project.gui-scripts]
+whs-recorder-app = "whs_recorder.app:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
