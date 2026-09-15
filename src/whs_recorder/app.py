@@ -12,6 +12,7 @@ render but never answer. A separate process sidesteps it entirely, and a crash
 while recording leaves this window standing.
 """
 
+import contextlib
 import os
 import queue
 import subprocess
@@ -365,14 +366,21 @@ class Launcher:
         self.root.mainloop()
 
 
-def hide_console() -> None:
-    """Hide the console window the packaged program was started from.
+def release_console() -> None:
+    """Let go of the console the packaged program was started in.
 
-    The program is built as a console application so that the commands it runs
-    for itself have somewhere to write. Double-clicked, though, that console is
-    an empty black window sitting behind the launcher, so it is hidden as soon
-    as the launcher opens. Started from a terminal there is nothing to hide,
-    and the commands print as usual.
+    The program is built as a console application so that the commands the
+    launcher runs for itself have somewhere to write. Once the window is open
+    that console is in the way, and hiding it is not enough: the program stays
+    attached to it, so closing it takes the program down too.
+
+    Detaching cuts that tie. Double-clicked, the console was ours alone and it
+    closes with us gone. Started from a terminal, the terminal keeps running
+    because the shell is still attached to it. Hiding the window did the wrong
+    thing there, hiding the terminal the person was working in.
+
+    The commands the launcher runs are unaffected: they are handed pipes of
+    their own and never needed this console.
     """
     if os.name != "nt" or not getattr(sys, "frozen", False):
         return
@@ -380,16 +388,21 @@ def hide_console() -> None:
     try:
         import ctypes
 
-        console = ctypes.windll.kernel32.GetConsoleWindow()
-        if console:
-            ctypes.windll.user32.ShowWindow(console, 0)  # SW_HIDE
+        # Our own streams point at the console being let go of, and writing to
+        # a handle that is gone raises.
+        for stream in ("stdout", "stderr"):
+            with contextlib.suppress(Exception):
+                getattr(sys, stream).close()
+            setattr(sys, stream, open(os.devnull, "w", encoding="utf-8"))
+
+        ctypes.windll.kernel32.FreeConsole()
     except Exception:
-        pass  # a missing console is not a reason to refuse to start
+        pass  # no console to let go of is not a reason to refuse to start
 
 
 def main() -> None:
     """Open the launcher window."""
-    hide_console()
+    release_console()
     Launcher().run()
 
 

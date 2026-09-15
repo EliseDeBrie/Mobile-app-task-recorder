@@ -270,3 +270,29 @@ def test_a_command_given_on_the_command_line_does_not_open_a_window(monkeypatch)
     monkeypatch.setattr(cli.sys, "argv", ["whs-recorder", "check"])
 
     cli.main(["check"])
+
+
+def test_the_console_is_released_only_when_packaged(monkeypatch):
+    """Run from a checkout there is no console of ours to let go of, and the
+    terminal the person is working in must be left alone."""
+    import whs_recorder.app as app
+
+    monkeypatch.setattr(app.os, "name", "nt")
+    monkeypatch.setattr(app.sys, "frozen", False, raising=False)
+
+    stdout_before = app.sys.stdout
+    app.release_console()
+
+    assert app.sys.stdout is stdout_before
+
+
+def test_the_console_is_left_alone_away_from_windows(monkeypatch):
+    import whs_recorder.app as app
+
+    monkeypatch.setattr(app.os, "name", "posix")
+    monkeypatch.setattr(app.sys, "frozen", True, raising=False)
+
+    stdout_before = app.sys.stdout
+    app.release_console()
+
+    assert app.sys.stdout is stdout_before
