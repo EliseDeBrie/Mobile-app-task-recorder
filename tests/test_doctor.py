@@ -51,16 +51,51 @@ def test_an_optional_gap_does_not_count_as_missing():
     assert "pip install --user winsdk" in text
 
 
-def test_every_remedy_avoids_needing_an_administrator():
-    """The whole point: a consultant on a customer machine is not an administrator."""
-    remedies = [r.remedy for r in doctor.run_checks() if r.remedy]
+def test_every_remedy_avoids_needing_an_administrator(monkeypatch):
+    """The whole point: a consultant on a customer machine is not an administrator.
 
-    assert remedies
+    Every check is forced to fail so that every remedy the report can produce is
+    actually produced. Reading them off the machine running the tests only
+    exercised whatever that machine happened to be missing, and on a fully
+    equipped one there was nothing to read at all.
+    """
+    monkeypatch.setattr(doctor, "_probe", lambda module: ("missing", "not installed"))
+    monkeypatch.setattr(
+        ocr, "windows_status",
+        lambda: BackendStatus(ocr.WINDOWS, False, "not installed", 'pip install --user ".[ocr-windows]"'),
+    )
+    monkeypatch.setattr(
+        ocr, "tesseract_status",
+        lambda: BackendStatus(ocr.TESSERACT, False, "no binary", "pip install --user pytesseract"),
+    )
+
+    results = doctor.run_checks()
+    remedies = [r.remedy for r in results if r.remedy]
+
+    assert len(remedies) >= len(doctor.PACKAGES), "every missing piece should say how to fix it"
     for remedy in remedies:
-        assert "administrator" not in remedy.lower() or "no administrator" in remedy.lower()
         assert "sudo" not in remedy.lower()
+        assert "administrator" not in remedy.lower() or "no administrator" in remedy.lower()
         if remedy.startswith("pip install"):
             assert "--user" in remedy
+
+
+def test_a_machine_with_nothing_missing_asks_for_nothing(monkeypatch):
+    """The case that broke this on a fully equipped machine: no gaps, no remedies."""
+    monkeypatch.setattr(doctor, "_probe", lambda module: ("ok", ""))
+    monkeypatch.setattr(
+        doctor, "check_screen", lambda: CheckResult("Screen capture", True, "a desktop")
+    )
+    monkeypatch.setattr(ocr, "windows_status", lambda: BackendStatus(ocr.WINDOWS, True, "built in"))
+    monkeypatch.setattr(ocr, "tesseract_status", lambda: BackendStatus(ocr.TESSERACT, True, "found"))
+    monkeypatch.setattr(ocr, "read_lines", lambda frame, *a, **k: [
+        ocr.TextLine(doctor.SELF_TEST_TEXT, 0, 0, 100, 20, 100.0)
+    ])
+
+    results = doctor.run_checks()
+
+    assert [r.remedy for r in results if r.remedy] == []
+    assert "Everything needed to record and build is present." in report(results)
 
 
 def test_the_tkinter_remedy_matches_the_platform(monkeypatch):
