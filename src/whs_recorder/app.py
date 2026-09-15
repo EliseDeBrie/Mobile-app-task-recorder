@@ -70,104 +70,175 @@ class Launcher:
 
         self.root = tk.Tk()
         self.root.title(WINDOW_TITLE)
-        self.root.minsize(640, 520)
+        self.root.minsize(600, 460)
+        self.root.geometry("700x800")
 
         self._build_widgets()
         self.root.after(100, self._drain)
 
     # ----------------------------------------------------------------- widgets
 
-    def _build_widgets(self) -> None:
+    def _use_native_theme(self) -> None:
+        """Look like a Windows program rather than a 1990s X application."""
+        style = self.ttk.Style()
+        for candidate in ("vista", "winnative", "clam"):
+            if candidate in style.theme_names():
+                style.theme_use(candidate)
+                break
+
+        family = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
+        style.configure(".", font=(family, 10))
+        style.configure("Heading.TLabel", font=(family, 13, "bold"))
+        style.configure("Title.TLabel", font=(family, 17, "bold"))
+        style.configure("Field.TLabel", font=(family, 10, "bold"))
+        style.configure("Hint.TLabel", font=(family, 9), foreground="#5c5c5c")
+        style.configure("Banner.TFrame", background="#1f3864")
+        style.configure("BannerTitle.TLabel", background="#1f3864", foreground="white",
+                        font=(family, 17, "bold"))
+        style.configure("BannerText.TLabel", background="#1f3864", foreground="#c9d4ea",
+                        font=(family, 10))
+        style.configure("Go.TButton", font=(family, 11, "bold"), padding=(18, 9))
+        self.font_family = family
+
+    def _field(self, parent, label: str, hint: str, initial: str = "", browse=None):
+        """A labelled box with a line underneath saying what it is for."""
         tk, ttk = self.tk, self.ttk
 
-        frame = ttk.Frame(self.root, padding=14)
-        frame.pack(fill="both", expand=True)
-        frame.columnconfigure(1, weight=1)
+        ttk.Label(parent, text=label, style="Field.TLabel").pack(anchor="w", pady=(10, 2))
 
-        row = 0
-        ttk.Label(frame, text="Record a process", font=("Segoe UI", 11, "bold")).grid(
-            row=row, column=0, columnspan=3, sticky="w"
+        row = ttk.Frame(parent)
+        row.pack(fill="x")
+        variable = tk.StringVar(value=initial)
+        entry = ttk.Entry(row, textvariable=variable)
+        entry.pack(side="left", fill="x", expand=True, ipady=3)
+        if browse is not None:
+            ttk.Button(row, text="Browse...", command=browse, width=11).pack(side="left", padx=(8, 0))
+
+        ttk.Label(parent, text=hint, style="Hint.TLabel", wraplength=560, justify="left").pack(
+            anchor="w", pady=(2, 0)
         )
+        return variable
 
-        row += 1
-        ttk.Label(frame, text="Name:").grid(row=row, column=0, sticky="w", pady=(8, 0))
-        self.name = tk.StringVar(value="Receive a purchase order line")
-        ttk.Entry(frame, textvariable=self.name).grid(
-            row=row, column=1, columnspan=2, sticky="ew", pady=(8, 0)
-        )
+    def _build_widgets(self) -> None:
+        tk, ttk = self.tk, self.ttk
+        self._use_native_theme()
 
-        row += 1
-        ttk.Label(frame, text="Description:").grid(row=row, column=0, sticky="w", pady=(6, 0))
-        self.description = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.description).grid(
-            row=row, column=1, columnspan=2, sticky="ew", pady=(6, 0)
-        )
-
-        row += 1
-        ttk.Label(frame, text="Save in:").grid(row=row, column=0, sticky="w", pady=(6, 0))
-        self.folder = tk.StringVar(value=DEFAULT_FOLDER)
-        ttk.Entry(frame, textvariable=self.folder).grid(row=row, column=1, sticky="ew", pady=(6, 0))
-        ttk.Button(frame, text="Browse", command=self._pick_folder).grid(
-            row=row, column=2, sticky="e", padx=(6, 0), pady=(6, 0)
-        )
-
-        row += 1
-        self.record_button = ttk.Button(frame, text="Start recording", command=self._record)
-        self.record_button.grid(row=row, column=1, sticky="w", pady=(12, 0))
+        banner = ttk.Frame(self.root, style="Banner.TFrame", padding=(18, 14))
+        banner.pack(fill="x")
+        ttk.Label(banner, text="WHS Task Recorder", style="BannerTitle.TLabel").pack(anchor="w")
         ttk.Label(
-            frame,
-            text="Drag a box around the app, then work through the process.  Ctrl+Shift+End stops.",
-            foreground="#555",
-        ).grid(row=row + 1, column=1, columnspan=2, sticky="w")
+            banner,
+            text="Record what you do in the warehouse app, and turn it into a Word document.",
+            style="BannerText.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
 
-        row += 2
-        ttk.Separator(frame).grid(row=row, column=0, columnspan=3, sticky="ew", pady=14)
+        # The buttons and the log are pinned to the bottom, and the form above
+        # them scrolls. A laptop screen is shorter than this form, and controls
+        # that fall off the bottom of a window are controls nobody finds.
+        footer = ttk.Frame(self.root, padding=(18, 10))
+        footer.pack(side="bottom", fill="both")
 
-        row += 1
-        ttk.Label(frame, text="Build the document", font=("Segoe UI", 11, "bold")).grid(
-            row=row, column=0, columnspan=3, sticky="w"
+        scroller = ttk.Frame(self.root)
+        scroller.pack(side="top", fill="both", expand=True)
+
+        canvas = tk.Canvas(scroller, highlightthickness=0, borderwidth=0)
+        bar = ttk.Scrollbar(scroller, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=bar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        bar.pack(side="right", fill="y")
+
+        body = ttk.Frame(canvas, padding=(18, 14))
+        held = canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(held, width=e.width))
+        canvas.bind_all(
+            "<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units")
         )
 
-        row += 1
-        ttk.Label(frame, text="Recording:").grid(row=row, column=0, sticky="w", pady=(8, 0))
-        self.recording_file = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.recording_file).grid(
-            row=row, column=1, sticky="ew", pady=(8, 0)
+        # ---------------------------------------------------------- record
+        record = ttk.LabelFrame(body, text="  Step 1  Record the process  ", padding=(14, 8, 14, 14))
+        record.pack(fill="x")
+
+        self.name = self._field(
+            record,
+            "What is this process called?",
+            "This becomes the title of the document. For example: Receive a purchase order line.",
+            initial="",
         )
-        ttk.Button(frame, text="Browse", command=self._pick_recording).grid(
-            row=row, column=2, sticky="e", padx=(6, 0), pady=(8, 0)
+        self.description = self._field(
+            record,
+            "A sentence about it (you can leave this empty)",
+            "Printed under the title, to tell the reader what the process is for.",
+        )
+        self.folder = self._field(
+            record,
+            "Where should it be kept?",
+            "The recording, its screenshots and the finished document all go in this folder.",
+            initial=DEFAULT_FOLDER,
+            browse=self._pick_folder,
         )
 
-        row += 1
-        ttk.Label(frame, text="Style:").grid(row=row, column=0, sticky="w", pady=(6, 0))
+        self.record_button = ttk.Button(
+            record, text="Start recording", style="Go.TButton", command=self._record
+        )
+        self.record_button.pack(anchor="w", pady=(16, 6))
+        ttk.Label(
+            record,
+            text=(
+                "The screen dims and you drag a box around the warehouse app window. "
+                "Then work through the process as you normally would: each tap raises a small "
+                "question about what you just did. Press Ctrl+Shift+End when you are finished."
+            ),
+            style="Hint.TLabel", wraplength=560, justify="left",
+        ).pack(anchor="w")
+
+        # ----------------------------------------------------------- build
+        build = ttk.LabelFrame(body, text="  Step 2  Make the document  ", padding=(14, 8, 14, 14))
+        build.pack(fill="x", pady=(16, 0))
+
+        self.recording_file = self._field(
+            build,
+            "Which recording?",
+            "Filled in for you after a recording. Browse to pick an older one.",
+            browse=self._pick_recording,
+        )
+
+        ttk.Label(build, text="What kind of document?", style="Field.TLabel").pack(
+            anchor="w", pady=(12, 4)
+        )
         self.style = tk.StringVar(value="task-guide")
-        ttk.Combobox(
-            frame, textvariable=self.style, values=["task-guide", "evidence"],
-            state="readonly", width=18,
-        ).grid(row=row, column=1, sticky="w", pady=(6, 0))
+        for value, title, explanation in (
+            ("task-guide", "A task guide",
+             "Numbered steps with a screenshot each, for training someone to do the process."),
+            ("evidence", "Test evidence",
+             "Each step paired with a screenshot of its result, to show a test was carried out."),
+        ):
+            ttk.Radiobutton(build, text=title, value=value, variable=self.style).pack(anchor="w")
+            ttk.Label(build, text=f"     {explanation}", style="Hint.TLabel",
+                      wraplength=540, justify="left").pack(anchor="w", pady=(0, 6))
 
-        row += 1
-        self.build_button = ttk.Button(frame, text="Build document", command=self._build)
-        self.build_button.grid(row=row, column=1, sticky="w", pady=(12, 0))
-
-        row += 1
-        ttk.Separator(frame).grid(row=row, column=0, columnspan=3, sticky="ew", pady=14)
-
-        row += 1
-        buttons = ttk.Frame(frame)
-        buttons.grid(row=row, column=0, columnspan=3, sticky="w")
-        ttk.Button(buttons, text="Check setup", command=self._check).grid(row=0, column=0)
-        ttk.Button(buttons, text="Open folder", command=self._open_folder).grid(
-            row=0, column=1, padx=(8, 0)
+        self.build_button = ttk.Button(
+            build, text="Build document", style="Go.TButton", command=self._build
         )
+        self.build_button.pack(anchor="w", pady=(10, 0))
 
-        row += 1
-        frame.rowconfigure(row, weight=1)
-        self.log = tk.Text(frame, height=10, wrap="word", state="disabled",
-                           background="#f7f7f7", relief="flat")
-        self.log.grid(row=row, column=0, columnspan=3, sticky="nsew", pady=(12, 0))
+        # ------------------------------------------------------- the rest
+        tools = ttk.Frame(footer)
+        tools.pack(fill="x", pady=(0, 6))
+        ttk.Button(tools, text="Check this computer", command=self._check).pack(side="left")
+        ttk.Button(tools, text="Open the folder", command=self._open_folder).pack(
+            side="left", padx=(8, 0)
+        )
+        ttk.Label(tools, text="Anything the program is doing is reported below.",
+                  style="Hint.TLabel").pack(side="left", padx=(12, 0))
 
-        self._say(f"{WINDOW_TITLE}. Press 'Check setup' to confirm this machine is ready.")
+        self.log = tk.Text(
+            footer, height=7, wrap="word", state="disabled", relief="flat",
+            background="#f4f4f4", foreground="#222", font=("Consolas" if os.name == "nt" else "monospace", 9),
+        )
+        self.log.pack(fill="both", expand=True)
+
+        self._say("Ready. If this is a new computer, press 'Check this computer' first.")
 
     # ------------------------------------------------------------------ helpers
 
@@ -260,7 +331,10 @@ class Launcher:
 
     def _record(self) -> None:
         if not self.name.get().strip():
-            self._say("Give the recording a name first.")
+            self._say(
+                "Give the process a name first, in the box at the top. "
+                "It becomes the title of the document."
+            )
             return
 
         os.makedirs(self.folder.get(), exist_ok=True)
