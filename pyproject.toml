@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mobile-app-task-recorder"
-version = "0.7.0"
+version = "0.8.0"
 description = "Offline evidence builder for D365 WMS mobile processes"
 authors = [{name = "D365Solutions"}]
 license = {text = "MIT"}
