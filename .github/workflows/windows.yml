@@ -1,0 +1,75 @@
+name: Windows
+
+# The tool runs on Windows and nowhere else, so that is where it is tested and
+# built. A Windows OCR call that was wrong for the installed packages reached a
+# user once; a test run on a real Windows machine is how that stops happening.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the tool and its test extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev,ocr-windows,window]"
+
+      - name: Run the tests
+        run: python -m pytest -q
+
+      - name: Check what this machine can do
+        run: whs-recorder check
+
+  build:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the tool, its OCR engine and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[ocr-windows,window]" pyinstaller
+
+      - name: Build the executable
+        run: pyinstaller --noconfirm --clean packaging/whs-recorder.spec
+
+      - name: Confirm the executable runs
+        run: |
+          & ".\dist\WHS Task Recorder.exe" --version
+          & ".\dist\WHS Task Recorder.exe" check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WHS-Task-Recorder-windows
+          path: dist/WHS Task Recorder.exe
+          if-no-files-found: error
+
+      - name: Attach it to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/WHS Task Recorder.exe
+          body: |
+            Download `WHS Task Recorder.exe` below and run it. Nothing else to
+            install: no Python, no packages, no terminal.
+
+            Windows will warn that the file is unsigned the first time. Choose
+            **More info**, then **Run anyway**.

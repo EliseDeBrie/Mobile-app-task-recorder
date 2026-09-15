@@ -39,6 +39,19 @@ Nothing leaves the machine. There is no telemetry and no network call.
 
 ## Install
 
+Download **WHS Task Recorder.exe** from the
+[latest release](https://github.com/D365Solutions/Mobile-app-task-recorder/releases/latest)
+and run it. There is nothing else to install: no Python, no packages, no
+terminal. Double-clicking opens a window with everything in it.
+
+Windows warns that a downloaded program is unsigned the first time you run it.
+Choose **More info**, then **Run anyway**. Signing the program would remove that
+warning and costs a certificate; until then the warning is expected.
+
+### Installing from source instead
+
+For working on the tool, or running it from a checkout:
+
 ```
 pip install -e .
 ```
@@ -49,7 +62,8 @@ run the tests.
 
 ## Installing without administrator rights
 
-None of this needs an administrator, which matters on a customer's machine:
+The executable needs nothing at all: no install, no administrator. Running from
+source needs no administrator either, which matters on a customer's machine:
 
 | Piece | How to get it as a plain user |
 | --- | --- |

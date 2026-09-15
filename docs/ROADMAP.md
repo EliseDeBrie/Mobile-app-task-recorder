@@ -51,10 +51,14 @@
 - The dialog thread reports why it cannot open a window instead of hanging
 - `check` tells a package that is missing apart from one that will not load
 
-## v0.8
-- Desktop UI
-- Packaging to single .exe
+## v0.8 — done
+- A launcher window, so the program is useful without a terminal: name it, record, build, all from one place
+- Packaged to a single .exe by CI, with nothing to install on the machine that runs it
+- Windows CI: the tests and the setup check now run on Windows on every push, which is what would have caught the OCR call that reached a user
+
+## v0.9
 - Template customization (house styles, cover page)
+- Signing the executable, so Windows stops warning about it
 
 ## Future
 - Batch processing
