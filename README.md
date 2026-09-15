@@ -1,4 +1,4 @@
-![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-early--beta-orange)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 # Mobile-app-task-recorder

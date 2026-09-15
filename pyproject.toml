@@ -7,7 +7,7 @@ name = "mobile-app-task-recorder"
 version = "0.7.0"
 description = "Offline evidence builder for D365 WMS mobile processes"
 authors = [{name = "D365Solutions"}]
-license = {text = "GPL-3.0"}
+license = {text = "MIT"}
 requires-python = ">=3.10"
 
 dependencies = [
