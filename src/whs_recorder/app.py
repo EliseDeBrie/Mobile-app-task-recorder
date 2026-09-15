@@ -12,7 +12,6 @@ render but never answer. A separate process sidesteps it entirely, and a crash
 while recording leaves this window standing.
 """
 
-import contextlib
 import os
 import queue
 import subprocess
