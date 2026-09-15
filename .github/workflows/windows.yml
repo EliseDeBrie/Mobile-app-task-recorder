@@ -51,10 +51,20 @@ jobs:
       - name: Build the executable
         run: pyinstaller --noconfirm --clean packaging/whs-recorder.spec
 
-      - name: Confirm the executable runs
+      - name: Confirm the executable runs, and that OCR survived packaging
         run: |
           & ".\dist\WHS Task Recorder.exe" --version
-          & ".\dist\WHS Task Recorder.exe" check
+          $report = & ".\dist\WHS Task Recorder.exe" check | Out-String
+          Write-Host $report
+
+          # The WinRT modules are reached through importlib, so a packaging
+          # mistake drops them silently and the check still exits zero. Reading
+          # a test image through the bundled engine is what proves they are in
+          # there.
+          if ($report -notmatch 'reading a test image with windows: read "WHS RECORDER 12345"') {
+            Write-Error "The packaged program cannot read text. The WinRT modules did not make it into the build."
+            exit 1
+          }
 
       - uses: actions/upload-artifact@v4
         with:
