@@ -49,14 +49,36 @@ def add_banner(frame, color, y1=560, y2=600):
     return out
 
 
-#: Phrases a TclError uses when the machine cannot open a window at all, as
-#: opposed to the code under test asking for something impossible.
-NO_TOOLKIT = (
-    "init.tcl",
-    "display",
-    "tcl wasn't installed",
-    "can't find a usable",
-)
+def _failed_starting_tk(error: BaseException) -> bool:
+    """Whether this TclError means the machine cannot start Tk at all.
+
+    Matching on the wording does not work: the same broken runner has produced
+    "couldn't read file ... init.tcl" one day and 'invalid command name
+    "tcl_findLibrary"' the next, and guessing the next phrase is a game with no
+    end. Where the error came from is the reliable signal.
+
+    Every failure of this kind happens inside `Tk.__init__`, while the Tcl
+    interpreter itself is being created: no display to connect to, or an
+    install whose own startup script is missing. Our widget code cannot reach
+    that point, so a TclError raised there is the machine's problem, and a
+    TclError raised anywhere else - a bad option on a widget, say - is ours and
+    must still fail.
+    """
+    import tkinter
+
+    frames = []
+    traceback = error.__traceback__
+    while traceback is not None:
+        frames.append(traceback.tb_frame)
+        traceback = traceback.tb_next
+
+    return any(
+        frame.f_code.co_name == "__init__"
+        # Tk is the interpreter; Toplevel and the widgets are not subclasses of
+        # it, so this does not catch a failure in a window's contents.
+        and isinstance(frame.f_locals.get("self"), tkinter.Tk)
+        for frame in frames
+    )
 
 
 def open_window(build):
@@ -75,8 +97,8 @@ def open_window(build):
     try:
         return build()
     except tkinter.TclError as exc:
-        if any(sign in str(exc).lower() for sign in NO_TOOLKIT):
-            pytest.skip(f"no windowing toolkit here: {exc}")
+        if _failed_starting_tk(exc):
+            pytest.skip(f"this machine cannot start Tk: {exc}")
         raise
 
 
