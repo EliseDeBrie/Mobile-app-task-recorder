@@ -730,6 +730,11 @@ def run_marker_recorder(
             {"subtask": start_subtask, "info": add_info_step},
         )
     )
+    # Where it went is worth saying. The bar is placed beside the region being
+    # captured, which on a second monitor is nowhere near where someone is
+    # looking, and "I cannot see it" is otherwise impossible to answer.
+    print(f"The recording bar is open at {bar_at[0]},{bar_at[1]}. "
+          f"Press 'Stop recording' on it when you are done.")
 
     m_listener.start()
     k_listener.start()
