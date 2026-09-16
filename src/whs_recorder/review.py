@@ -17,6 +17,7 @@ Save.
 import os
 from typing import Callable, Optional
 
+from .branding import apply_icon
 from .instructions import ACTION_CHOICES, ACTION_LABELS, PREFERRED
 from .recording import (
     INFO,
@@ -102,6 +103,7 @@ class Review:
         self.owns_root = tk._default_root is None
         self.root = tk.Tk() if self.owns_root else tk.Toplevel()
         self.root.title(f"Check the steps - {self.recording.name}")
+        apply_icon(self.root)
         self.root.geometry("1200x760")
         self.root.minsize(1000, 620)
 

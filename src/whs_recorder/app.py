@@ -20,6 +20,7 @@ import threading
 from typing import List, Optional
 
 from . import __version__
+from .branding import apply_icon
 
 WINDOW_TITLE = f"WHS Task Recorder {__version__}"
 DEFAULT_FOLDER = os.path.join(os.path.expanduser("~"), "Documents", "WHS recordings")
@@ -71,6 +72,7 @@ class Launcher:
 
         self.root = tk.Tk()
         self.root.title(WINDOW_TITLE)
+        apply_icon(self.root)
         self.root.minsize(600, 460)
         self.root.geometry("700x800")
 

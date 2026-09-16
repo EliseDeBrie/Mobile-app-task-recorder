@@ -43,6 +43,9 @@ whs-recorder-app = "whs_recorder.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+whs_recorder = ["icon.png"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]

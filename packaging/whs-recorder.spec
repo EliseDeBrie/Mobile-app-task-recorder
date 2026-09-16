@@ -44,7 +44,11 @@ analysis = Analysis(
     [os.path.join(SPECPATH, "entry.py")],
     pathex=[],
     binaries=[],
-    datas=[],
+    # The window icon travels with the program: Windows takes the title-bar
+    # and taskbar icon from the .ico below, but Tk sets its own per window and
+    # wants a PNG.
+    datas=[(os.path.join(SPECPATH, os.pardir, "src", "whs_recorder", "icon.png"),
+             "whs_recorder")],
     hiddenimports=hidden,
     hookspath=[],
     runtime_hooks=[],
@@ -71,4 +75,7 @@ exe = EXE(
     # Run as a command, it attaches to the terminal it was started from.
     console=False,
     disable_windowed_traceback=False,
+    # Without this Windows falls back to PyInstaller's own logo, which is a
+    # feather and tells a user nothing about what they just downloaded.
+    icon=os.path.join(SPECPATH, "whs-recorder.ico"),
 )

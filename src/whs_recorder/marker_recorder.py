@@ -39,6 +39,7 @@ from typing import Callable, Optional, Tuple
 import numpy as np
 import cv2
 
+from .branding import apply_icon
 from .dialogs import DialogHost, wait_for
 from .frame_select import detect_toast
 from .instructions import ACTION_CHOICES, ACTION_LABELS, ACTIONS, PREFERRED, render_instruction
@@ -257,6 +258,7 @@ def _recorder_bar(root, session: Session, position, gestures):
 
     win = tk.Toplevel(root)
     win.title("Recording")
+    apply_icon(win)
     win.attributes("-topmost", True)
     win.resizable(False, False)
     if position is not None:
