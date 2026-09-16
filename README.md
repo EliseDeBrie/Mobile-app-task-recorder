@@ -44,9 +44,17 @@ Nothing leaves the machine. There is no telemetry and no network call.
 
 ## Install
 
-Download **WHS Task Recorder.exe** from the
-[latest release](https://github.com/D365Solutions/Mobile-app-task-recorder/releases/latest)
-and run it. There is nothing else to install: no Python, no packages, no
+Go to the [latest release](https://github.com/EliseDeBrie/Mobile-app-task-recorder/releases/latest)
+and download **WHS.Task.Recorder.exe** from the **Assets** list at the bottom of
+that page. It is about 80 MB.
+
+The executable is not in the repository itself, and it is not in the green
+**Code** button's zip: that is the source. It is only ever on the Releases page,
+where each version is built and attached by CI. (GitHub shows the file with dots
+instead of spaces; rename it back to `WHS Task Recorder.exe` if you like, or
+leave it - it makes no difference.)
+
+Then just run it. There is nothing else to install: no Python, no packages, no
 terminal. Double-clicking opens a window with everything in it, and no console
 window appears at any point.
 
