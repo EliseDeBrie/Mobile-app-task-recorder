@@ -391,7 +391,7 @@ def test_started_from_explorer_there_is_no_terminal_to_borrow(monkeypatch):
     assert app.sys.stdout is None
 
 
-def test_mark_records_without_asking_unless_it_is_told_to(monkeypatch):
+def test_mark_records_without_asking_unless_it_is_told_to():
     parser = cli.build_parser()
     assert parser.parse_args(["mark", "--out", "r.json"]).ask_each_step is False
     assert parser.parse_args(["mark", "--out", "r.json", "--ask-each-step"]).ask_each_step is True

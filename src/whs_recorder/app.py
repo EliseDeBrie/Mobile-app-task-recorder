@@ -67,6 +67,7 @@ class Launcher:
         self.ttk = ttk
         self.messages: "queue.Queue[str]" = queue.Queue()
         self.running: Optional[subprocess.Popen] = None
+        self.reviewing = None
 
         self.root = tk.Tk()
         self.root.title(WINDOW_TITLE)
@@ -389,14 +390,34 @@ class Launcher:
         from .review import Review
 
         self.recording_file.set(path)
+
+        # One window per recording. A second one over the same file would hold
+        # its own copy of the steps, and whichever was saved last would quietly
+        # throw the other's corrections away.
+        if self._review_open():
+            self.reviewing.root.deiconify()
+            self.reviewing.root.lift()
+            self._say("The steps are already open.")
+            return
+
         try:
-            window = Review(path, on_build=self._build_from)
+            self.reviewing = Review(path, on_build=self._build_from)
         except Exception as exc:
+            self.reviewing = None
             self._say(f"Could not open the steps: {exc}")
             return
 
         self._say(f"Checking the steps in {os.path.basename(path)}.")
-        window.run()
+        self.reviewing.run()
+
+    def _review_open(self) -> bool:
+        """Whether a review window from earlier is still on screen."""
+        if self.reviewing is None:
+            return False
+        try:
+            return bool(self.reviewing.root.winfo_exists())
+        except Exception:
+            return False  # already gone, along with the widget that could say so
 
     def _build_from(self, path: str) -> None:
         self.recording_file.set(path)
