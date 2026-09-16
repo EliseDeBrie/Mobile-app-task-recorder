@@ -48,7 +48,7 @@ known by itself, by reading the screen:
 | Value | What you scanned or typed, for a scan or an entry | From the text that appeared where you tapped |
 | Title | Something the reader should know *before* doing the step | No |
 | Note | Something useful *after* it | No |
-| Leave this step out | For frames you do not want in the guide | Ticked for frames that look like the app loading |
+| Leave this step out | For steps you do not want in the guide - a stray tap, a tooltip | No: that is yours to decide, in the review window |
 
 A small bar sits beside the app while you record: the step count, the last step
 taken, a **Stop recording** button, and buttons for starting a section or adding
@@ -75,9 +75,10 @@ If you would rather name each step as you take it, `--ask-each-step` brings back
 a popup per action, showing the sentence your answers produce.
 
 Each step is captured twice: once at the action, and again over the next couple of
-seconds, keeping the frame that shows the result banner. Screenshots land in a
-folder beside the recording, and `--redact` applies your rules as they are
-written. Give a slow device more room with `--result-window 4.0`, or turn the
+seconds, keeping the frame that shows the result banner. Your next tap ends that
+watch early, so working quickly costs nothing but the result picture of a step
+that had no banner to show. Screenshots land in a folder beside the recording,
+and `--redact` applies your rules as they are written. Give a slow device more room with `--result-window 4.0`, or turn the
 capture off with `--no-screenshots` if you would rather build from a video.
 
 Gestures, mirroring the Task Recorder pane:

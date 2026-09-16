@@ -17,7 +17,7 @@ import queue
 import subprocess
 import sys
 import threading
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from . import __version__
 from .branding import apply_icon
@@ -67,6 +67,9 @@ class Launcher:
         self.tk = tk
         self.ttk = ttk
         self.messages: "queue.Queue[str]" = queue.Queue()
+        #: Work for the window's own thread, handed over from the worker: Tk
+        #: may only be driven from the thread that owns it.
+        self.calls: "queue.Queue[Callable[[], None]]" = queue.Queue()
         self.running: Optional[subprocess.Popen] = None
         self.reviewing = None
 
@@ -266,10 +269,16 @@ class Launcher:
         self.log.configure(state="disabled")
 
     def _drain(self) -> None:
-        """Move output from the worker thread into the log."""
+        """Move output from the worker thread into the log, and run what the
+        worker asked the window to do."""
         try:
             while True:
                 self._say(self.messages.get_nowait())
+        except queue.Empty:
+            pass
+        try:
+            while True:
+                self.calls.get_nowait()()
         except queue.Empty:
             pass
         self.root.after(100, self._drain)
@@ -341,12 +350,12 @@ class Launcher:
                 process.wait()
                 self.messages.put(done if process.returncode == 0 else "Stopped with an error.")
                 if process.returncode == 0 and on_success is not None:
-                    self.root.after(0, on_success)
+                    self.calls.put(on_success)
             except Exception as exc:
                 self.messages.put(f"Could not run it: {exc}")
             finally:
                 self.running = None
-                self.root.after(0, lambda: self._busy(False))
+                self.calls.put(lambda: self._busy(False))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -476,6 +485,22 @@ def borrow_parent_console() -> None:
             sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)  # noqa: SIM115
     except Exception:
         pass  # printing is a convenience; failing to do it must not stop the run
+
+
+def print_as_it_happens() -> None:
+    """Send each printed line on at once, rather than when the buffer fills.
+
+    The launcher reads the recorder's output through a pipe, and Python
+    buffers a pipe in blocks of several kilobytes: "Step 3: ..." and "The
+    recording bar is open at ..." would all land in the log pane together
+    when recording ended, which is the opposite of a log. A terminal is line
+    buffered already, so this changes nothing there.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True)
+        except (AttributeError, ValueError):
+            pass  # not a text stream that can be reconfigured; nothing lost
 
 
 def main() -> None:

@@ -371,6 +371,201 @@ def _guess_action(reason: str, suggestion: Suggestion) -> str:
     return "tap"
 
 
+def _signature(frame: np.ndarray) -> np.ndarray:
+    """A small grey copy of a frame, cheap to compare with the next one."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return cv2.resize(gray, (160, 90), interpolation=cv2.INTER_AREA)
+
+
+class StepTracker:
+    """Turns taps into steps, one at a time, without making the next tap wait.
+
+    Each step is captured twice: the action frame at the tap, and the result
+    over the seconds after it. The result watch used to hold the recorder until
+    the window ran out, which was harmless while a popup held the user too, and
+    is not now that nothing does: at a tap a second, with no banner to cut the
+    watch short, two taps in three were thrown away while the recorder waited.
+
+    So the watch runs alongside, and the next tap ends it. The screen the user
+    tapped on next is the result there was, and the recorder is free to write
+    the new tap down the moment it happens.
+
+    Everything that touches the screen, the OCR engine or a window is handed in,
+    which is what lets this be exercised with a list of frames and a clock.
+    """
+
+    def __init__(
+        self,
+        recording: Recording,
+        *,
+        grab: Callable[[], np.ndarray],
+        watch: Callable[[np.ndarray, threading.Event, dict], None],
+        suggest: Optional[Callable[[np.ndarray, Optional[Tuple[int, int]], np.ndarray], Suggestion]],
+        ask: Optional[Callable[[int, str, float, Suggestion, str], Optional[Step]]],
+        save_shot: Callable[[Optional[np.ndarray], str], str],
+        persist: Callable[[], None],
+        announce: Callable[[Step], None],
+        diff_threshold: float,
+        min_gap_sec: float,
+        result_window: float,
+        capture_screenshots: bool = True,
+    ):
+        self.recording = recording
+        self.grab = grab
+        self.watch = watch
+        self.suggest = suggest
+        self.ask = ask
+        self.save_shot = save_shot
+        self.persist = persist
+        self.announce = announce
+        self.diff_threshold = diff_threshold
+        self.min_gap_sec = min_gap_sec
+        self.result_window = result_window
+        self.capture_screenshots = capture_screenshots
+
+        self._lock = threading.Lock()
+        self._busy = False
+        self._pending = None  # the last step, whose result is still being watched
+
+        self.last_frame = grab()
+        self.last_sig = _signature(self.last_frame)
+        self.last_screen = ""
+        self.last_mark_t = 0.0
+
+    # ------------------------------------------------------------- the claim
+
+    @property
+    def busy(self) -> bool:
+        return self._busy
+
+    def claim(self) -> bool:
+        """Take the recorder for one step or one dialog; False if it is taken."""
+        with self._lock:
+            if self._busy:
+                return False
+            self._busy = True
+            return True
+
+    def release(self) -> None:
+        with self._lock:
+            self._busy = False
+
+    # -------------------------------------------------------------- one tap
+
+    def notice_tap(self) -> None:
+        """A tap has just happened: end the previous step's result watch now.
+
+        The watch has to stop at the tap itself, not when the tap is looked at
+        a moment later. By then the screen has changed, and the last frame the
+        watch saw would be the new screen - which, used as the baseline, makes
+        the new tap look like it changed nothing.
+        """
+        pending = self._pending
+        if pending is not None:
+            pending[3].set()
+
+    def consider(self, reason: str, click: Optional[Tuple[int, int]], now: float) -> Optional[Step]:
+        """Decide whether the tap just taken is a step, and write it if so."""
+        if now - self.last_mark_t < self.min_gap_sec:
+            return None
+        if not self.claim():
+            return None
+
+        try:
+            # The previous step's result watch was stopped at the tap; its
+            # last frame is the screen the tap was taken on, which is that
+            # step's result and the baseline for this one.
+            self._settle()
+            before = self.last_frame
+
+            frame = self.grab()
+            signature = _signature(frame)
+            diff = mean_abs_diff(signature, self.last_sig)
+            if diff < self.diff_threshold:
+                self.last_frame, self.last_sig = frame, signature
+                return None
+
+            step_no = len(self.recording.steps) + 1
+            stop = threading.Event()
+            holder: dict = {}
+            watcher = None
+            if self.capture_screenshots:
+                watcher = threading.Thread(
+                    target=self.watch, args=(before, stop, holder), daemon=True
+                )
+                watcher.start()
+
+            suggestion = Suggestion()
+            if self.suggest is not None and self.capture_screenshots:
+                suggestion = self.suggest(frame, click, before)
+
+            if self.ask is not None:
+                step = self.ask(step_no, reason, diff, suggestion, self.last_screen)
+            else:
+                # Written down as read off the screen. Interrupting someone
+                # for every tap makes a short process a long one, and the
+                # wording is easier to fix afterwards, with the screenshots
+                # to look at.
+                step = Step(
+                    action=_guess_action(reason, suggestion),
+                    control=suggestion.control,
+                    value=suggestion.value,
+                    screen=suggestion.screen or self.last_screen,
+                )
+
+            if step is None:
+                stop.set()
+                if watcher is not None:
+                    watcher.join(timeout=self.result_window + 1.0)
+                self.last_frame, self.last_sig = frame, signature
+                return None
+
+            step.t = round(now, 3)
+            step.reason = reason
+            step.diff = round(diff, 2)
+            if self.capture_screenshots:
+                step.action_img = self.save_shot(frame, f"step_{step_no:02d}_action.png")
+
+            self.last_screen = step.screen or self.last_screen
+            self.last_mark_t = now
+            self.last_frame, self.last_sig = frame, signature
+            self.recording.add(step)
+            if watcher is not None:
+                self._pending = (step, step_no, watcher, stop, holder)
+            self.persist()
+            self.announce(step)
+            return step
+        finally:
+            self.release()
+
+    # ---------------------------------------------------------- the result
+
+    def _settle(self, let_it_finish: bool = False) -> None:
+        """Close the pending step's result watch and write what it found."""
+        pending, self._pending = self._pending, None
+        if pending is None:
+            return
+
+        step, step_no, watcher, stop, holder = pending
+        if not let_it_finish:
+            stop.set()
+        watcher.join(timeout=self.result_window + 1.0)
+
+        step.result_img = self.save_shot(holder.get("frame"), f"step_{step_no:02d}_result.png")
+        step.result_toast = holder.get("toast", "")
+
+        # The last frame the watch saw is the screen the step left behind: the
+        # baseline the next step is judged against.
+        settled = holder.get("last")
+        if settled is not None:
+            self.last_frame, self.last_sig = settled, _signature(settled)
+        self.persist()
+
+    def finish(self) -> None:
+        """Let the last step's result watch run its course, then write it."""
+        self._settle(let_it_finish=True)
+
+
 def run_marker_recorder(
     out_path: str,
     monitor_index: int = 1,
@@ -420,12 +615,9 @@ def run_marker_recorder(
         ensure_dir(shots_dir)
 
     session = Session()
-    last_mark_t = 0.0
     last_click: Optional[Tuple[int, int]] = None
-    last_screen = ""
     pressed = set()
     pending_timer: Optional[threading.Timer] = None
-    dialog_open = False
     lock = threading.Lock()
 
     # A capture session belongs to the thread that made it, so each thread gets
@@ -434,11 +626,11 @@ def run_marker_recorder(
     captures = threading.local()
 
     def capture_session():
-        session = getattr(captures, "session", None)
-        if session is None:
-            session = open_capture()
-            captures.session = session
-        return session
+        capture = getattr(captures, "session", None)
+        if capture is None:
+            capture = open_capture()
+            captures.session = capture
+        return capture
 
     with open_capture() as probe:
         monitors = probe.monitors
@@ -453,10 +645,6 @@ def run_marker_recorder(
     def grab_frame():
         return np.array(capture_session().grab(monitor))[:, :, :3]
 
-    def grab_signature(frame=None):
-        gray = cv2.cvtColor(grab_frame() if frame is None else frame, cv2.COLOR_BGR2GRAY)
-        return cv2.resize(gray, (160, 90), interpolation=cv2.INTER_AREA)
-
     def save_shot(frame, filename: str) -> str:
         if frame is None or not shots_dir:
             return ""
@@ -465,24 +653,8 @@ def run_marker_recorder(
         write_image(os.path.join(shots_dir, filename), frame)
         return f"{shots_name}/{filename}"
 
-    last_frame = grab_frame()
-    last_sig = grab_signature(last_frame)
-
     def elapsed() -> float:
         return time.time() - recording.start_epoch
-
-    def claim_dialog() -> bool:
-        nonlocal dialog_open
-        with lock:
-            if dialog_open:
-                return False
-            dialog_open = True
-            return True
-
-    def release_dialog() -> None:
-        nonlocal dialog_open
-        with lock:
-            dialog_open = False
 
     def save_recording(announce: bool = True):
         """Write the recording out. Called after every step, not only at the end,
@@ -505,122 +677,66 @@ def run_marker_recorder(
             return point
         return None
 
-    def maybe_mark(reason: str):
-        nonlocal last_mark_t, last_sig, last_frame, last_screen, pending_timer
+    def watch_result(baseline, stop: threading.Event, holder: dict) -> None:
+        """Watch the region for the result, on a capture session of its own."""
+        with open_capture() as thread_session:
+            def grab():
+                frame = np.array(thread_session.grab(monitor))[:, :, :3]
+                holder["last"] = frame
+                return frame
 
+            holder["frame"], holder["toast"] = _capture_result(
+                grab, baseline, result_window, stop
+            )
+
+    def read_screen(frame, click, before) -> Suggestion:
+        return suggest_step(frame, point=region_point(click), before=before)
+
+    def ask_about(step_no, reason, diff, suggestion, last_screen) -> Optional[Step]:
+        return dialogs.ask(
+            lambda root: _ask_step(root, step_no, reason, diff, popup_at, suggestion, last_screen)
+        )
+
+    def announce(step: Step) -> None:
+        session.steps = len(recording.steps)
+        session.last = step.instruction(PREFERRED)
+        print(f"Step {session.steps}: {session.last}")
+
+    tracker = StepTracker(
+        recording,
+        grab=grab_frame,
+        watch=watch_result,
+        suggest=read_screen if suggest else None,
+        ask=ask_about if ask_each_step else None,
+        save_shot=save_shot,
+        persist=lambda: save_recording(announce=False),
+        announce=announce,
+        diff_threshold=diff_threshold,
+        min_gap_sec=min_gap_sec,
+        result_window=result_window,
+        capture_screenshots=capture_screenshots,
+    )
+
+    def maybe_mark(reason: str):
+        nonlocal pending_timer
         with lock:
             pending_timer = None
-            if dialog_open:
-                return
-
-        t_now = elapsed()
-        if t_now - last_mark_t < min_gap_sec:
-            return
-
-        # The screen before the action is the baseline a result banner is
-        # judged against: by the time the action is captured the banner may
-        # already be up, and comparing it with itself would hide it.
-        before_frame = last_frame
-
-        new_frame = grab_frame()
-        new_sig = grab_signature(new_frame)
-        diff = mean_abs_diff(new_sig, last_sig)
-        if diff < diff_threshold:
-            last_frame = new_frame
-            last_sig = new_sig
-            return
-
-        if not claim_dialog():
-            return
-
-        # Capture the action frame now, and keep watching for the result banner
-        # over the next couple of seconds while the step is written down.
-        step_no = len(recording.steps) + 1
-        action_frame = new_frame if capture_screenshots else None
-        stop_result = threading.Event()
-        result_holder = {}
-
-        def watch_result():
-            # Its own session, per the note above.
-            with open_capture() as thread_session:
-                result_holder["frame"], result_holder["toast"] = _capture_result(
-                    lambda: np.array(thread_session.grab(monitor))[:, :, :3],
-                    before_frame,
-                    result_window,
-                    stop_result,
-                )
-
-        watcher = None
-        if capture_screenshots:
-            watcher = threading.Thread(target=watch_result, daemon=True)
-            watcher.start()
-
-        # The claim is held until the step is written, so stopping the recorder
-        # mid-step waits for it rather than saving without it.
-        # Read the screen so the step names its own control, where OCR is there.
-        suggestion = Suggestion()
-        point = region_point(last_click) if reason == "mouse_click" else None
-        if suggest and action_frame is not None:
-            suggestion = suggest_step(action_frame, point=point, before=before_frame)
-
-        try:
-            if ask_each_step:
-                step = dialogs.ask(
-                    lambda root: _ask_step(
-                        root, step_no, reason, diff, popup_at, suggestion, last_screen
-                    )
-                )
-            else:
-                # Written down as read off the screen. Interrupting someone for
-                # every tap makes a short process a long one, and the wording is
-                # easier to fix afterwards, with the screenshots to look at.
-                step = Step(
-                    action=_guess_action(reason, suggestion),
-                    control=suggestion.control,
-                    value=suggestion.value,
-                    screen=suggestion.screen or last_screen,
-                )
-
-            if step is None:
-                stop_result.set()
-                if watcher is not None:
-                    watcher.join(timeout=result_window + 1.0)
-                last_frame = new_frame
-                last_sig = new_sig
-                return
-
-            step.t = round(t_now, 3)
-            step.reason = reason
-            step.diff = round(diff, 2)
-
-            if watcher is not None:
-                watcher.join(timeout=result_window + 1.0)
-                step.action_img = save_shot(action_frame, f"step_{step_no:02d}_action.png")
-                step.result_img = save_shot(result_holder.get("frame"), f"step_{step_no:02d}_result.png")
-                step.result_toast = result_holder.get("toast", "")
-
-            last_screen = step.screen or last_screen
-            last_mark_t = t_now
-            last_frame = grab_frame()
-            last_sig = grab_signature(last_frame)
-            recording.add(step)
-            save_recording(announce=False)
-            session.steps = len(recording.steps)
-            session.last = step.instruction(PREFERRED)
-            print(f"Step {session.steps}: {session.last}")
-        finally:
-            release_dialog()
+        # A click is only a step where the tap landed: a click on the launcher
+        # or the bar says nothing about the app.
+        click = last_click if reason == "mouse_click" else None
+        tracker.consider(reason, click, elapsed())
 
     def schedule_check(reason: str):
         nonlocal pending_timer
+        tracker.notice_tap()
         with lock:
-            if pending_timer is not None or dialog_open:
+            if pending_timer is not None:
                 return
             pending_timer = threading.Timer(post_delay_sec, maybe_mark, args=(reason,))
             pending_timer.start()
 
     def start_subtask():
-        if not claim_dialog():
+        if not tracker.claim():
             print("Finish the open step first, then start the subtask.")
             return
         try:
@@ -628,7 +744,7 @@ def run_marker_recorder(
                 dialogs, lambda root: _ask_text(root, "Name this section", "What is this part called?")
             )
         finally:
-            release_dialog()
+            tracker.release()
         if subtask_name:
             recording.add(SubtaskStart(t=round(elapsed(), 3), name=subtask_name))
             save_recording(announce=False)
@@ -643,7 +759,7 @@ def run_marker_recorder(
         print("Subtask ended.")
 
     def add_info_step():
-        if not claim_dialog():
+        if not tracker.claim():
             print("Finish the open step first, then add the info step.")
             return
         try:
@@ -651,7 +767,7 @@ def run_marker_recorder(
                 dialogs, lambda root: _ask_text(root, "Add a note", "What should the reader know?")
             )
         finally:
-            release_dialog()
+            tracker.release()
         if text:
             recording.add(InfoStep(t=round(elapsed(), 3), text=text))
             save_recording(announce=False)
@@ -755,10 +871,13 @@ def run_marker_recorder(
                 pending_timer = None
 
         # A popup may still be open, or a step may be mid-capture. Wait for it,
-        # so stopping never costs the step that was being filled in.
+        # so stopping never costs the step that was being filled in; then let
+        # the last step's result watch run out, so its banner is not lost to
+        # the stop button being pressed straight after it.
         deadline = time.time() + result_window + 30.0
-        while dialog_open and time.time() < deadline:
+        while tracker.busy and time.time() < deadline:
             time.sleep(0.1)
+        tracker.finish()
 
         save_recording()
         dialogs.stop()

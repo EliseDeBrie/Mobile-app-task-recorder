@@ -1,15 +1,15 @@
-"""Reading the step off the screen, so the popup arrives already filled in.
+"""Reading the step off the screen, so it can be written down without asking.
 
 Task Recorder never has to ask what was clicked: every control reports itself.
 Here there is only a picture, so the next best thing is to read it. Where OCR is
-available this offers three answers before you type anything:
+available this offers three answers:
 
 * the **screen** you are on, taken from the title band at the top,
 * the **control** you used, taken from the text at or just above the tap,
 * the **value** that appeared, taken from the text that was not there before.
 
-They are suggestions, shown in the popup for you to accept or correct. Without
-OCR every one of them comes back empty and the popup is simply blank.
+They are guesses, and the review window is where they are corrected. Without
+OCR every one of them comes back empty and the step is written down bare.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -149,7 +149,7 @@ def suggest_step(
 
     reader = reader or ocr.read_lines
 
-    # Both frames are read at once: OCR is the slow part of opening the popup.
+    # Both frames are read at once: OCR is the slow part of writing a step down.
     before_lines: List[TextLine] = []
     if before is None:
         lines = reader(after)

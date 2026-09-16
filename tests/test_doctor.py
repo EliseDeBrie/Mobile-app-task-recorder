@@ -1,5 +1,3 @@
-import pytest
-
 from whs_recorder import doctor, ocr
 from whs_recorder.doctor import CheckResult, report
 from whs_recorder.ocr import BackendStatus
@@ -122,7 +120,7 @@ def test_no_ocr_at_all_is_reported_as_survivable(monkeypatch):
     results = doctor.check_ocr()
     text = report(results)
 
-    assert "the popup will not fill itself in" in text
+    assert "written down without their wording" in text
     assert "everything else still works" in text
     assert "required item(s) missing" not in text
 

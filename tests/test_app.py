@@ -99,3 +99,55 @@ def test_the_command_it_runs_can_find_this_package(monkeypatch):
 
     package_parent = command_environment()["PYTHONPATH"].split(os.pathsep)[0]
     assert os.path.isdir(os.path.join(package_parent, "whs_recorder"))
+
+
+def test_output_is_line_buffered_so_the_log_pane_is_live(monkeypatch, tmp_path):
+    """A pipe is block buffered by default, and the recorder's lines would all
+    arrive together when it ended."""
+    import io
+    import sys
+
+    from whs_recorder.app import print_as_it_happens
+
+    pipe = io.TextIOWrapper(io.BytesIO(), line_buffering=False)
+    monkeypatch.setattr(sys, "stdout", pipe)
+    monkeypatch.setattr(sys, "stderr", io.TextIOWrapper(io.BytesIO()))
+
+    print_as_it_happens()
+
+    assert pipe.line_buffering is True
+
+
+def test_a_stream_that_cannot_be_reconfigured_is_left_alone(monkeypatch):
+    import sys
+
+    from whs_recorder.app import print_as_it_happens
+
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", object())
+
+    print_as_it_happens()  # must not raise
+
+
+def test_the_worker_hands_window_work_to_the_window_thread(launcher, monkeypatch):
+    """Nothing from the worker touches Tk directly; it goes through the queue
+    that the window drains itself."""
+    import threading
+
+    ran = []
+    fake = type("P", (), {})()
+    fake.stdout = iter(["one line\n"])
+    fake.returncode = 0
+    fake.wait = lambda: None
+    monkeypatch.setattr("subprocess.Popen", lambda *a, **k: fake)
+
+    launcher._run(["check"], "done", on_success=lambda: ran.append("success"))
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread() and thread.daemon:
+            thread.join(timeout=2)
+
+    assert ran == []  # not yet: it waits for the window's own thread
+    launcher._drain()
+    assert ran == ["success"]
+    assert "one line" in log_of(launcher)
+    assert str(launcher.record_button.cget("state")) == "normal"

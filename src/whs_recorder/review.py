@@ -370,12 +370,16 @@ class Review:
             node.action = ACTION_LABELS.get(self.action.get(), node.action)
             for key, variable in self.fields.items():
                 setattr(node, key, variable.get().strip())
-            node.hidden = leave_out
-            if not leave_out:
-                # The recorder flags a step it believes was only the app
-                # loading. Saying to keep it has to override that too, or the
-                # step would still be dropped when the document is built.
-                node.is_loading = False
+            # One box stands for two flags, "hidden" and "loading", so it is
+            # only written back when it was actually changed: reading a step
+            # that is left out must not count as editing it.
+            if leave_out != bool(node.hidden or node.is_loading):
+                node.hidden = leave_out
+                if not leave_out:
+                    # Keeping a step the recorder took for the app loading has
+                    # to clear that flag too, or the step would still be
+                    # dropped when the document is built.
+                    node.is_loading = False
         elif isinstance(node, InfoStep):
             node.text = self.fields["title"].get().strip()
             node.hidden = leave_out

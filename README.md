@@ -20,8 +20,9 @@ same kind of task guide, down to how the step sentences are generated. See
    that visibly changes that region is written down by itself, reading the
    screen for the field, the button and the value. Each step captures the app
    region twice — at the action, and again over the next couple of seconds,
-   keeping the frame that shows the result banner. A small bar beside the app
-   shows the step count and has the stop button on it.
+   keeping the frame that shows the result banner; your next tap ends that
+   watch, so nothing waits on it. A small bar beside the app shows the step
+   count and has the stop button on it.
 2. **Check the steps** — the recorded steps open in a list, each with its
    screenshot. Correct any wording the screen was read wrong, leave out
    anything that does not belong in the guide, and reorder what is out of

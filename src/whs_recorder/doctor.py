@@ -34,7 +34,7 @@ PACKAGES = [
     ("docx", "writing the Word document", "python-docx", _pip("python-docx")),
     ("mss", "capturing the screen", "mss", _pip("mss")),
     ("pynput", "watching for taps and keys", "pynput", _pip("pynput")),
-    ("tkinter", "the region selector and the step popup", "tkinter", ""),
+    ("tkinter", "the windows: the region selector, the recording bar, the review", "tkinter", ""),
 ]
 
 OPTIONAL_PACKAGES = [
@@ -180,8 +180,8 @@ def check_ocr() -> List[CheckResult]:
         results.append(
             CheckResult(
                 "OCR", False,
-                "no engine, so the popup will not fill itself in",
-                "everything else still works; the fields are typed by hand",
+                "no engine, so steps are written down without their wording",
+                "everything else still works; the wording is typed in the review window",
                 optional=True,
             )
         )
@@ -209,7 +209,7 @@ def check_ocr_reads() -> CheckResult:
     if not engine:
         return CheckResult(
             "OCR: reading a test image", False, "skipped, no engine",
-            "the popup will simply open blank", optional=True,
+            "steps will be written down without their wording", optional=True,
         )
 
     try:

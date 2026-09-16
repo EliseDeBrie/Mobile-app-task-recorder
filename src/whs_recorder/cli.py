@@ -109,9 +109,10 @@ def main(argv=None):
         return None
 
     # Running as a command: borrow the terminal's console so output is visible.
-    from .app import borrow_parent_console
+    from .app import borrow_parent_console, print_as_it_happens
 
     borrow_parent_console()
+    print_as_it_happens()
 
     args = build_parser().parse_args(argv)
     try:

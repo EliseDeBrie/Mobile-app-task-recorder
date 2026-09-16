@@ -247,6 +247,18 @@ def test_an_untouched_recording_is_not_reported_as_changed(window):
     assert window.dirty is False
 
 
+def test_reading_a_step_that_is_left_out_is_not_an_edit(window):
+    """The box shows 'loading or hidden'; writing it back as 'hidden' every
+    time made a look at a loading step count as a change, and closing asked
+    about saving nothing."""
+    window._show(5)  # the loading step
+    window._commit()
+
+    assert window.dirty is False
+    assert window.recording.nodes[5].hidden is False
+    assert window.recording.nodes[5].is_loading is True
+
+
 def test_building_hands_the_saved_path_over(recording_path):
     built = []
     review = open_window(lambda: Review(recording_path, on_build=built.append))
