@@ -56,7 +56,14 @@
 - Packaged to a single .exe by CI, with nothing to install on the machine that runs it
 - Windows CI: the tests and the setup check now run on Windows on every push, which is what would have caught the OCR call that reached a user
 
-## v0.9
+## v0.9 — done
+- Recording no longer interrupts: each step is written down from what the screen says, with nothing to answer
+- A recorder bar beside the app: the step count, the last step taken, and a stop button
+- A review window listing every recorded step with its screenshot, for correcting the wording, leaving a step out, reordering and deleting
+- `review` command, and the same window opening by itself when a recording finishes
+- `--ask-each-step` for anyone who would rather name each step as they take it
+
+## v0.10
 - Template customization (house styles, cover page)
 - Signing the executable, so Windows stops warning about it
 

@@ -27,7 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--no-screenshots", action="store_true",
                    help="Do not capture screenshots while recording; build from a video instead")
     m.add_argument("--no-suggest", action="store_true",
-                   help="Do not read the screen to pre-fill the popup (needs OCR to be useful)")
+                   help="Do not read the screen to fill in the step (needs OCR to be useful)")
+    m.add_argument("--ask-each-step", action="store_true",
+                   help="Ask about every action as it happens, instead of correcting the "
+                        "steps afterwards in the review window")
     m.add_argument("--tesseract", default="",
                    help="Path to a Tesseract binary, for a portable copy that needed no installer")
     m.add_argument("--ocr", choices=("windows", "tesseract", "none"), default="",
@@ -61,6 +64,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Disable result-message detection and use --result-offsets instead")
     b.add_argument("--result-offsets", default="0.6,1.2",
                    help="Seconds after a step to look for the result message (used when no message is detected)")
+
+    e = sub.add_parser("review", help="Open the recorded steps in a window and correct them")
+    e.add_argument("--markers", required=True, help="Recording JSON path")
 
     v = sub.add_parser("preview", help="Print the guide text for a recording, without building a document")
     v.add_argument("--markers", required=True, help="Recording JSON path")
@@ -144,9 +150,18 @@ def run(args):
             region_spec=spec,
             capture_screenshots=not args.no_screenshots,
             suggest=not args.no_suggest,
+            ask_each_step=args.ask_each_step,
             result_window=args.result_window,
             redaction=load_redaction_config(args.redact),
         )
+        return
+
+    if args.cmd == "review":
+        # Imported here for the same reason as the recorder: the window toolkit
+        # is only needed by the commands that open a window.
+        from .review import main as open_review
+
+        open_review(args.markers)
         return
 
     if args.cmd == "build":

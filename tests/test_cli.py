@@ -389,3 +389,43 @@ def test_started_from_explorer_there_is_no_terminal_to_borrow(monkeypatch):
     assert kernel.calls == [-1]
     assert opened == []
     assert app.sys.stdout is None
+
+
+def test_mark_records_without_asking_unless_it_is_told_to(monkeypatch):
+    parser = cli.build_parser()
+    assert parser.parse_args(["mark", "--out", "r.json"]).ask_each_step is False
+    assert parser.parse_args(["mark", "--out", "r.json", "--ask-each-step"]).ask_each_step is True
+
+
+def test_mark_passes_ask_each_step_to_the_recorder(monkeypatch):
+    seen = {}
+
+    def fake_recorder(**kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setitem(
+        __import__("sys").modules, "whs_recorder.marker_recorder",
+        type("M", (), {"run_marker_recorder": staticmethod(fake_recorder)}),
+    )
+
+    cli.main(["mark", "--out", "r.json", "--region", "full", "--ask-each-step"])
+
+    assert seen["ask_each_step"] is True
+    assert seen["out_path"] == "r.json"
+
+
+def test_review_opens_the_recording_it_is_given(monkeypatch, recording_path):
+    opened = []
+    monkeypatch.setitem(
+        __import__("sys").modules, "whs_recorder.review",
+        type("M", (), {"main": staticmethod(opened.append)}),
+    )
+
+    cli.main(["review", "--markers", recording_path])
+
+    assert opened == [recording_path]
+
+
+def test_review_needs_a_recording():
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["review"])

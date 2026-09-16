@@ -14,14 +14,19 @@ same kind of task guide, down to how the step sentences are generated. See
 
 ## How it works
 
-1. **Mark** — drag a rectangle over the warehouse app window, the way Greenshot
-   and PowerPoint's screen clipping work. Every tap or Enter that visibly
-   changes that region raises a popup asking what the action was: the button or
-   field, the value, and any title or note. It shows the sentence your answers
-   will produce, and it captures the app region twice per step: at the action,
-   and again over the next couple of seconds, keeping the frame that shows the
-   result banner.
-2. **Build** — point the builder at the recording. It redacts the screenshots
+1. **Record** — drag a rectangle over the warehouse app window, the way
+   Greenshot and PowerPoint's screen clipping work. Then work through the
+   process as you normally would, with nothing to answer: every tap or Enter
+   that visibly changes that region is written down by itself, reading the
+   screen for the field, the button and the value. Each step captures the app
+   region twice — at the action, and again over the next couple of seconds,
+   keeping the frame that shows the result banner. A small bar beside the app
+   shows the step count and has the stop button on it.
+2. **Check the steps** — the recorded steps open in a list, each with its
+   screenshot. Correct any wording the screen was read wrong, leave out
+   anything that does not belong in the guide, and reorder what is out of
+   place.
+3. **Build** — point the builder at the recording. It redacts the screenshots
    and writes the Word document.
 
 Because the app is a window on the PC rather than a page in a browser, there is
@@ -104,6 +109,8 @@ same way.
 whs-recorder mark --out runs/receiving/recording.json ^
                   --name "Receive a purchase order line"
 
+whs-recorder review --markers runs/receiving/recording.json
+
 whs-recorder preview --markers runs/receiving/recording.json
 
 whs-recorder build --markers runs/receiving/recording.json ^
@@ -117,8 +124,15 @@ whs-recorder build --markers runs/receiving/recording.json ^
 with `--region 220,140,360,640`, or watch the whole screen with `--region full`.
 
 While recording: `Ctrl+Shift+S` starts a subtask, `Ctrl+Shift+E` ends it,
-`Ctrl+Shift+I` adds an info step, `Ctrl+Shift+End` stops and saves. More recipes
-are in [examples/README_examples.md](examples/README_examples.md).
+`Ctrl+Shift+I` adds an info step, `Ctrl+Shift+End` stops and saves — or press
+**Stop recording** on the bar beside the app. More recipes are in
+[examples/README_examples.md](examples/README_examples.md).
+
+`review` reopens that list for any recording, so a guide can be reworded long
+after it was recorded. Nothing is written to the file until you press Save.
+
+If you would rather name each step as you take it, `mark --ask-each-step`
+restores the popup that asks about every action.
 
 ## What each step records
 
@@ -127,15 +141,15 @@ A step holds the same things a Task Recorder step holds, as text:
 | Field | Example | Where it comes from |
 | --- | --- | --- |
 | Screen | `Purchase receive` | Read from the title bar, and carried over until it changes |
-| Action | `scan` | Chosen in the popup |
+| Action | `scan` | Inferred from whether you typed a value, and corrected in the review window |
 | Control | `Purchase order` | Read from the label above the tap |
 | Value | `PO000045` | Read from the text that appeared where you tapped |
-| Title, note | your words | Typed in the popup |
+| Title, note | your words | Typed in the review window |
 
-Where OCR is available the popup opens with the screen, control and value
-already filled in, and you correct what is wrong. Without it the popup is blank
-and you type all three. Suggestions are deliberately cautious: a tap it cannot
-read leaves the box empty rather than guessing. Turn the reading off with
+All of it is read off the screen while you work, and all of it is editable
+afterwards. The reading is deliberately cautious: a tap it cannot make out
+leaves the box empty rather than guessing, which is easy to spot and fill in
+from the screenshot beside it. Turn the reading off entirely with
 `--no-suggest`.
 
 Two engines can do the reading. Windows OCR is part of Windows 10 and 11 and is
@@ -173,8 +187,8 @@ The recorder captures the app region itself, so a separate screen recording is
 optional. Captures are PNG, straight from the screen, with none of the softening
 a video codec introduces.
 
-If you would rather record video anyway — a process too fast to interrupt with
-popups, or evidence that has to show real time — pass `--no-screenshots` while
+If you would rather record video anyway — evidence that has to show real time,
+say — pass `--no-screenshots` while
 recording and `--video` when building. The builder then selects a frame per step
 from the video, and crops it to the region if the video covers the whole screen.
 

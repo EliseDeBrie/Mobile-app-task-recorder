@@ -161,6 +161,22 @@ class Recording:
     def steps(self) -> List[Step]:
         return [n for n in self.nodes if isinstance(n, Step)]
 
+    def remove(self, index: int) -> Optional[Node]:
+        """Drop one node, by its position in the recording."""
+        if 0 <= index < len(self.nodes):
+            return self.nodes.pop(index)
+        return None
+
+    def move(self, index: int, offset: int) -> int:
+        """Shift one node up or down, and report where it ended up."""
+        if not (0 <= index < len(self.nodes)):
+            return index
+
+        target = max(0, min(index + offset, len(self.nodes) - 1))
+        if target != index:
+            self.nodes.insert(target, self.nodes.pop(index))
+        return target
+
     def open_subtasks(self) -> int:
         """How many subtasks are still open, so the recorder can end them."""
         depth = 0

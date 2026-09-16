@@ -36,34 +36,43 @@ Other ways to say where the app is:
 | `--region 220,140,360,640` | A fixed kiosk layout you script. `whs-recorder region` prints these numbers for you. |
 | `--region full` | You want the whole monitor after all. |
 
-Every tap or Enter that visibly changes that region raises a popup. Answer it the
-way Task Recorder would have answered itself:
+Every tap or Enter that visibly changes that region is written down as a step,
+with nothing to answer. The recorder fills in what Task Recorder would have
+known by itself, by reading the screen:
 
-| Field | What to put | Filled in for you |
+| Field | What it becomes | Filled in for you |
 | --- | --- | --- |
 | Screen | The screen you are on: `Purchase receive` | From the title bar, and it carries over until it changes |
-| Action | Tap, scan, enter a value, select a row, check box, close, back | No |
+| Action | Tap, scan, enter a value, select a row, check box, close, back | Guessed from whether you typed a value |
 | Button, field or page name | The label on screen: `Inbound`, `LP`, `Quantity` | From the label just above your tap |
 | Value | What you scanned or typed, for a scan or an entry | From the text that appeared where you tapped |
 | Title | Something the reader should know *before* doing the step | No |
 | Note | Something useful *after* it | No |
-| Loading / transition screen | Tick for frames you do not want in the guide | No |
+| Leave this step out | For frames you do not want in the guide | Ticked for frames that look like the app loading |
+
+A small bar sits beside the app while you record: the step count, the last step
+taken, a **Stop recording** button, and buttons for starting a section or adding
+a note. It stays out of the captured region, so it never lands in a screenshot.
+
+When you stop, the steps open in a window with the screenshot of each one beside
+it. That is where the wording is corrected — which is quicker than answering a
+popup per tap, and better informed, because you are looking at the picture. The
+list is also where a step is dropped, left out, or moved. Nothing is written to
+the recording until you press Save.
 
 Field labels read reliably, being dark text on a light background. Button
 labels, white on a coloured fill, often do not, so a tap on a button usually
-comes back blank and you type the name.
+comes back blank and you type the name in afterwards.
 
-The three "filled in for you" fields need OCR. On Windows 10 or 11 that is
+The reading needs OCR. On Windows 10 or 11 that is
 `pip install --user ".[ocr-windows]"` and nothing else: the engine is already
 part of Windows. Otherwise install Tesseract and pass `--tesseract` if it lives
-somewhere unusual, such as a portable copy unpacked to avoid its installer. Without it they arrive blank and you type them. They are
-suggestions either way, so read them before you press OK; a tap the reader
-cannot make sense of leaves the box empty rather than guessing. `--no-suggest`
-turns the reading off.
+somewhere unusual, such as a portable copy unpacked to avoid its installer.
+Without it the steps are still recorded, with their screenshots, and you write
+the wording yourself. `--no-suggest` turns the reading off.
 
-The popup shows the sentence your answers produce, so you can see the guide being
-written as you record. It opens beside the app, never over it, so it stays out of
-the screenshots.
+If you would rather name each step as you take it, `--ask-each-step` brings back
+a popup per action, showing the sentence your answers produce.
 
 Each step is captured twice: once at the action, and again over the next couple of
 seconds, keeping the frame that shows the result banner. Screenshots land in a
@@ -80,8 +89,17 @@ Gestures, mirroring the Task Recorder pane:
 | `Ctrl+Shift+I` | Add an info step for something done away from the device |
 | `Ctrl+Shift+End` | Stop and save |
 
+The same three are on the recorder bar, for anyone who would rather press a
+button than remember a key combination.
+
 The recording is saved on the way out, including when the recorder is stopped
 some other way.
+
+Reopen the step list for a recording at any time:
+
+```
+whs-recorder review --markers runs/receiving/recording.json
+```
 
 Fewer steps than you expected? Lower `--threshold` (default `7.5`). Too many,
 because of a blinking cursor or a clock? Raise it.
@@ -145,8 +163,8 @@ the result screenshots inside a task guide, use `--with-result`.
 
 ## 5. Building from a screen recording instead
 
-Some processes are too fast to interrupt with a popup per step, and some evidence
-has to show real elapsed time. Record with `--no-screenshots`, capture the screen
+Some evidence has to show real elapsed time, and some processes are better
+captured as video than as stills. Record with `--no-screenshots`, capture the screen
 with whatever you use (Xbox Game Bar, OBS, Teams), and build with a video:
 
 ```

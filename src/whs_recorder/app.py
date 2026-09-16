@@ -186,8 +186,10 @@ class Launcher:
             record,
             text=(
                 "The screen dims and you drag a box around the warehouse app window. "
-                "Then work through the process as you normally would: each tap raises a small "
-                "question about what you just did. Press Ctrl+Shift+End when you are finished."
+                "Then simply work through the process: every step is written down as you go, "
+                "with nothing to answer. A small bar shows the step count and has a stop "
+                "button on it (Ctrl+Shift+End stops it too). When you stop, the steps open "
+                "in a window where you can correct the wording."
             ),
             style="Hint.TLabel", wraplength=560, justify="left",
         ).pack(anchor="w")
@@ -217,10 +219,22 @@ class Launcher:
             ttk.Label(build, text=f"     {explanation}", style="Hint.TLabel",
                       wraplength=540, justify="left").pack(anchor="w", pady=(0, 6))
 
-        self.build_button = ttk.Button(
-            build, text="Build document", style="Go.TButton", command=self._build
+        buttons = ttk.Frame(build)
+        buttons.pack(anchor="w", pady=(10, 0))
+        self.review_button = ttk.Button(
+            buttons, text="Check the steps", command=self._review_chosen
         )
-        self.build_button.pack(anchor="w", pady=(10, 0))
+        self.review_button.pack(side="left", padx=(0, 10))
+        self.build_button = ttk.Button(
+            buttons, text="Build document", style="Go.TButton", command=self._build
+        )
+        self.build_button.pack(side="left")
+        ttk.Label(
+            build,
+            text="'Check the steps' opens the list of recorded steps so you can correct the "
+                 "wording or leave a step out. It opens by itself when a recording finishes.",
+            style="Hint.TLabel", wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(8, 0))
 
         # ------------------------------------------------------- the rest
         tools = ttk.Frame(footer)
@@ -261,6 +275,7 @@ class Launcher:
         state = "disabled" if busy else "normal"
         self.record_button.configure(state=state)
         self.build_button.configure(state=state)
+        self.review_button.configure(state=state)
 
     def recording_path(self) -> str:
         from .utils import safe_filename
@@ -296,8 +311,13 @@ class Launcher:
 
     # ------------------------------------------------------------------ actions
 
-    def _run(self, args: List[str], done: str) -> None:
-        """Run the tool as a command and stream its output into the log."""
+    def _run(self, args: List[str], done: str, on_success=None) -> None:
+        """Run the tool as a command and stream its output into the log.
+
+        `on_success` runs on the window's own thread once the command has
+        finished cleanly, which is how recording hands over to the review
+        window: a Tk window may only be opened from the thread that owns it.
+        """
         self._busy(True)
 
         def worker():
@@ -317,6 +337,8 @@ class Launcher:
                     self.messages.put(line)
                 process.wait()
                 self.messages.put(done if process.returncode == 0 else "Stopped with an error.")
+                if process.returncode == 0 and on_success is not None:
+                    self.root.after(0, on_success)
             except Exception as exc:
                 self.messages.put(f"Could not run it: {exc}")
             finally:
@@ -342,11 +364,43 @@ class Launcher:
         self.recording_file.set(path)
 
         self._say(f"\nRecording to {path}")
-        self._say("Drag a box around the warehouse app. Ctrl+Shift+End stops and saves.")
+        self._say("Drag a box around the warehouse app. Press 'Stop recording' when you are done.")
         self._run(
             ["mark", "--out", path, "--name", self.name.get(), "--description", self.description.get()],
-            "Recording saved. Press 'Build document' when you are ready.",
+            "Recording saved. Opening the steps so you can check them.",
+            on_success=lambda: self._review(path),
         )
+
+    def _review_chosen(self) -> None:
+        """Open the review window for whichever recording is filled in."""
+        path = self.recording_file.get() or self.recording_path()
+        if not os.path.isfile(path):
+            self._say(f"No recording at {path}. Record one first, or browse to it.")
+            return
+        self._review(path)
+
+    def _review(self, path: str) -> None:
+        """Show the recorded steps, with building the document one press away.
+
+        The window is a child of this one rather than a separate process: it
+        only reads and writes the recording file, and a second Tk window on the
+        same thread is exactly what Tk is happy with.
+        """
+        from .review import Review
+
+        self.recording_file.set(path)
+        try:
+            window = Review(path, on_build=self._build_from)
+        except Exception as exc:
+            self._say(f"Could not open the steps: {exc}")
+            return
+
+        self._say(f"Checking the steps in {os.path.basename(path)}.")
+        window.run()
+
+    def _build_from(self, path: str) -> None:
+        self.recording_file.set(path)
+        self._build()
 
     def _build(self) -> None:
         path = self.recording_file.get() or self.recording_path()

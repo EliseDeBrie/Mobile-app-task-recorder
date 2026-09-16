@@ -1,11 +1,15 @@
-"""The recorder: watch the app, and ask what each action was.
+"""The recorder: watch the app, and write down what each action was.
 
 D365 Task Recorder can name a step by itself because every control tells it what
 was clicked and with what value. Nothing on a handheld does that, so this
-recorder asks. When a click or an Enter visibly changes the screen it raises a
-popup carrying the same fields a Task Recorder step holds - the action, the
-control, the value, and the title and note annotations - and shows the sentence
-those fields will produce in the guide.
+recorder reads the screen instead: when a click or an Enter visibly changes it,
+the region is photographed and OCR fills in the same fields a Task Recorder step
+holds - the action, the control, the value, and the title and note annotations.
+
+That reading is a guess, so nothing is final: the steps are corrected afterwards
+in the review window, which is quicker than answering a popup per click and can
+be done sitting down. `ask_each_step` brings the popup back for anyone who would
+rather name each step as they take it.
 
 The warehouse app is a window on the PC, not a page in a browser, so there is
 no tab for an extension to photograph. Instead the recorder watches one region of
@@ -14,9 +18,10 @@ screen clipping work - and grabs that region itself at each step. Watching only
 the app also keeps the clock and the taskbar from triggering steps of their own.
 
 Each step is captured twice: once at the action, and again over the couple of
-seconds after it, keeping the frame that shows the result banner. That second
-capture runs while the popup is open, and the popup is placed beside the region
-so it never ends up in the picture.
+seconds after it, keeping the frame that shows the result banner.
+
+A small bar sits beside the region while recording, out of the picture, showing
+the step count and the last step taken, with a button to stop.
 
 Gestures, mirroring the Task Recorder pane:
 
@@ -229,6 +234,80 @@ def _ask_text(root, window_title: str, prompt: str) -> Optional[str]:
     return result[0]
 
 
+class Session:
+    """What the recorder bar shows, and what it asks the recorder to do."""
+
+    def __init__(self):
+        self.steps = 0
+        self.last = "Nothing recorded yet."
+        self.stop = threading.Event()
+
+
+def _recorder_bar(root, session: Session, position, gestures):
+    """A small strip that sits beside the app while recording.
+
+    Recording used to be stopped with a key combination and nothing on screen
+    said so, or said how many steps had been taken. This is that missing
+    window: a count, a stop button, and the two gestures that are worth having
+    to hand. It stays out of the captured region, so it never lands in a
+    screenshot.
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    win = tk.Toplevel(root)
+    win.title("Recording")
+    win.attributes("-topmost", True)
+    win.resizable(False, False)
+    if position is not None:
+        win.geometry(f"+{int(position[0])}+{int(position[1])}")
+
+    frame = ttk.Frame(win, padding=12)
+    frame.grid()
+
+    heading = ttk.Label(frame, text="Recording", font=("Segoe UI", 12, "bold"))
+    heading.grid(row=0, column=0, columnspan=3, sticky="w")
+
+    counter = tk.StringVar(value="0 steps")
+    ttk.Label(frame, textvariable=counter, font=("Segoe UI", 22, "bold")).grid(
+        row=1, column=0, columnspan=3, sticky="w", pady=(2, 0)
+    )
+
+    latest = tk.StringVar(value=session.last)
+    ttk.Label(frame, textvariable=latest, wraplength=260, foreground="#444").grid(
+        row=2, column=0, columnspan=3, sticky="w", pady=(0, 10)
+    )
+
+    ttk.Button(frame, text="Stop recording", command=session.stop.set).grid(
+        row=3, column=0, columnspan=3, sticky="ew"
+    )
+    ttk.Button(frame, text="Start a section", command=gestures["subtask"]).grid(
+        row=4, column=0, sticky="ew", pady=(8, 0)
+    )
+    ttk.Button(frame, text="Add a note", command=gestures["info"]).grid(
+        row=4, column=2, sticky="ew", pady=(8, 0)
+    )
+
+    ttk.Label(
+        frame,
+        text="Work through the process as usual. Every step is written down; you can "
+             "correct the wording afterwards.",
+        wraplength=260, foreground="#666", font=("Segoe UI", 8),
+    ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(10, 0))
+
+    def tick():
+        counter.set(f"{session.steps} step" + ("" if session.steps == 1 else "s"))
+        latest.set(session.last)
+        if session.stop.is_set():
+            win.destroy()
+            return
+        win.after(200, tick)
+
+    win.protocol("WM_DELETE_WINDOW", session.stop.set)
+    tick()
+    return win
+
+
 def _capture_result(
     grab: Callable[[], Optional[np.ndarray]],
     baseline,
@@ -265,6 +344,31 @@ def _capture_result(
     return last_frame, ""
 
 
+def _in_dialog(dialogs, build):
+    """Open a dialog from wherever the caller happens to be.
+
+    The bar's buttons are pressed on the dialog thread itself, and asking that
+    thread to wait for its own work would hang it. Called from anywhere else,
+    the request is queued as usual.
+    """
+    if threading.current_thread().name == "whs-dialogs":
+        return build(dialogs._root)
+    return dialogs.ask(build)
+
+
+def _guess_action(reason: str, suggestion: Suggestion) -> str:
+    """Pick the likeliest action for a step nobody was asked about.
+
+    A value appearing where the tap landed means something was typed or
+    scanned into a field; anything else is a tap. Both are easy to correct in
+    the review screen, and a wrong guess there costs a click rather than an
+    interruption.
+    """
+    if suggestion.value:
+        return "scan" if reason == "enter" else "enter"
+    return "tap"
+
+
 def run_marker_recorder(
     out_path: str,
     monitor_index: int = 1,
@@ -277,6 +381,7 @@ def run_marker_recorder(
     region_spec: str = "",
     capture_screenshots: bool = True,
     suggest: bool = True,
+    ask_each_step: bool = False,
     result_window: float = RESULT_WINDOW_SEC,
     redaction: Optional[RedactionConfig] = None,
 ):
@@ -312,6 +417,7 @@ def run_marker_recorder(
         shots_dir = os.path.join(os.path.dirname(os.path.abspath(out_path)), shots_name)
         ensure_dir(shots_dir)
 
+    session = Session()
     last_mark_t = 0.0
     last_click: Optional[Tuple[int, int]] = None
     last_screen = ""
@@ -425,8 +531,8 @@ def run_marker_recorder(
         if not claim_dialog():
             return
 
-        # Capture before the popup opens, and keep watching for the result
-        # banner while the popup is being filled in.
+        # Capture the action frame now, and keep watching for the result banner
+        # over the next couple of seconds while the step is written down.
         step_no = len(recording.steps) + 1
         action_frame = new_frame if capture_screenshots else None
         stop_result = threading.Event()
@@ -449,18 +555,29 @@ def run_marker_recorder(
 
         # The claim is held until the step is written, so stopping the recorder
         # mid-step waits for it rather than saving without it.
-        # Read the screen so the popup arrives filled in, where OCR is available.
+        # Read the screen so the step names its own control, where OCR is there.
         suggestion = Suggestion()
         point = region_point(last_click) if reason == "mouse_click" else None
         if suggest and action_frame is not None:
             suggestion = suggest_step(action_frame, point=point, before=before_frame)
 
         try:
-            step = dialogs.ask(
-                lambda root: _ask_step(
-                    root, step_no, reason, diff, popup_at, suggestion, last_screen
+            if ask_each_step:
+                step = dialogs.ask(
+                    lambda root: _ask_step(
+                        root, step_no, reason, diff, popup_at, suggestion, last_screen
+                    )
                 )
-            )
+            else:
+                # Written down as read off the screen. Interrupting someone for
+                # every tap makes a short process a long one, and the wording is
+                # easier to fix afterwards, with the screenshots to look at.
+                step = Step(
+                    action=_guess_action(reason, suggestion),
+                    control=suggestion.control,
+                    value=suggestion.value,
+                    screen=suggestion.screen or last_screen,
+                )
 
             if step is None:
                 stop_result.set()
@@ -486,7 +603,9 @@ def run_marker_recorder(
             last_sig = grab_signature(last_frame)
             recording.add(step)
             save_recording(announce=False)
-            print(f"Step {len(recording.steps)}: {step.instruction(PREFERRED)}")
+            session.steps = len(recording.steps)
+            session.last = step.instruction(PREFERRED)
+            print(f"Step {session.steps}: {session.last}")
         finally:
             release_dialog()
 
@@ -503,8 +622,8 @@ def run_marker_recorder(
             print("Finish the open step first, then start the subtask.")
             return
         try:
-            subtask_name = dialogs.ask(
-                lambda root: _ask_text(root, "Start subtask", "Name of the subtask:")
+            subtask_name = _in_dialog(
+                dialogs, lambda root: _ask_text(root, "Name this section", "What is this part called?")
             )
         finally:
             release_dialog()
@@ -526,8 +645,8 @@ def run_marker_recorder(
             print("Finish the open step first, then add the info step.")
             return
         try:
-            text = dialogs.ask(
-                lambda root: _ask_text(root, "Info step", "What should the reader do or know?")
+            text = _in_dialog(
+                dialogs, lambda root: _ask_text(root, "Add a note", "What should the reader know?")
             )
         finally:
             release_dialog()
@@ -582,25 +701,46 @@ def run_marker_recorder(
             from . import ocr as ocr_module
 
             if ocr_module.available():
-                print("Reading the screen to fill the popup in for you.")
+                print("Reading the screen to write each step down for you.")
             else:
-                print("No OCR engine, so the popup opens blank. Run 'whs-recorder check' to see why.")
+                print(
+                    "No OCR engine, so the steps are written down without their wording. "
+                    "Run 'whs-recorder check' to see why."
+                )
         if redaction is not None and not redaction.is_empty():
             print(f"Redaction active while recording: {redaction.describe()}")
     else:
         print("Screenshots are off: build the document from a screen recording instead.")
+    if ask_each_step:
+        print("Every action raises a popup to fill in.")
+    else:
+        print("Nothing to answer while you work: correct the wording afterwards with "
+              "'whs-recorder review'.")
     print("Ctrl+Shift+S subtask, Ctrl+Shift+E end subtask, Ctrl+Shift+I info step, Ctrl+Shift+End stop.")
 
     m_listener = mouse.Listener(on_click=on_click)
     k_listener = keyboard.Listener(on_press=on_key_press, on_release=on_key_release)
 
+    bar_at = popup_position(region, screen, popup_size=(300, 260))
+    dialogs.ask(
+        lambda root: _recorder_bar(
+            root, session, bar_at,
+            {"subtask": start_subtask, "info": add_info_step},
+        )
+    )
+
     m_listener.start()
     k_listener.start()
     try:
-        k_listener.join()
+        # Either the button on the bar or the key combination ends the session.
+        while not session.stop.wait(0.2):
+            if not k_listener.running:
+                break
     except KeyboardInterrupt:
-        k_listener.stop()
+        pass
     finally:
+        session.stop.set()
+        k_listener.stop()
         m_listener.stop()
         with lock:
             if pending_timer is not None:

@@ -26,7 +26,7 @@ guide that will be shared widely.
 Only the region you selected is ever captured. The rest of the desktop, other
 windows, and a second monitor are never in frame.
 
-OCR, where it is used to fill the popup in for you, runs on this machine: the
+OCR, where it is used to write the steps down for you, runs on this machine: the
 engine built into Windows is an on-device API, and Tesseract is a local binary.
 No screenshot is sent anywhere by either. What it reads can end
 up in the recording as the screen, control and value of a step, so the same care

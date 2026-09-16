@@ -199,3 +199,47 @@ def test_saving_leaves_no_temporary_file_behind(tmp_path):
     sample().save(str(path))
 
     assert [p.name for p in tmp_path.iterdir()] == ["recording.json"]
+
+
+def test_a_step_can_be_dropped():
+    """Recording without being asked about every click means some steps are
+    noise, and the review screen has to be able to throw them away."""
+    r = sample()
+    before = len(r.nodes)
+
+    dropped = r.remove(1)
+
+    assert dropped.control == "Inbound"
+    assert len(r.nodes) == before - 1
+    assert [e.number for e in r.outline()] == [None, 1, 2, 3]
+
+
+def test_dropping_something_that_is_not_there_changes_nothing():
+    r = sample()
+    before = list(r.nodes)
+
+    assert r.remove(99) is None
+    assert r.remove(-5) is None
+    assert r.nodes == before
+
+
+def test_a_step_can_be_moved():
+    r = Recording()
+    for name in ("one", "two", "three"):
+        r.add(Step(action="tap", control=name))
+
+    assert r.move(2, -1) == 1
+    assert [n.control for n in r.nodes] == ["one", "three", "two"]
+
+    assert r.move(0, 1) == 1
+    assert [n.control for n in r.nodes] == ["three", "one", "two"]
+
+
+def test_moving_past_either_end_stops_at_the_end():
+    r = Recording()
+    for name in ("one", "two"):
+        r.add(Step(action="tap", control=name))
+
+    assert r.move(0, -3) == 0
+    assert r.move(1, 9) == 1
+    assert [n.control for n in r.nodes] == ["one", "two"]

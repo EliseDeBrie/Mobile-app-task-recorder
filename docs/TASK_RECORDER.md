@@ -59,7 +59,7 @@ recorded steps and any screenshots that were captured".
 
 | Task Recorder | Here | Notes |
 | --- | --- | --- |
-| Instrumented controls report each action | The popup asks, pre-filled by reading the screen | Nothing on the handheld reports what you tapped. Where OCR is available the recorder reads the screen name from the title bar, the control from the label above the tap, and the value from the text that just appeared, and shows them for you to correct. |
+| Instrumented controls report each action | The screen is read, and the wording corrected afterwards | Nothing on the handheld reports what you tapped. Where OCR is available the recorder reads the screen name from the title bar, the control from the label above the tap, and the value from the text that just appeared. All of it is a guess, so the recorded steps open in a review window afterwards, each beside its screenshot, for correcting. |
 | Instruction label resolution | `instructions.py` | Same three-stage resolution and the same `%1` / `%2` arguments, with a label table that says tap and scan instead of click and type. |
 | Preferred / example / user-supplied values | `--values`, and `user_text` per step | Same rules, including "a button has no example label". |
 | Subtasks, info steps, hidden steps | `recording.py` | Same nesting and the same continuous numbering across subtasks. |

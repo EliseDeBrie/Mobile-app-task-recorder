@@ -8,7 +8,8 @@ import numpy as np
 
 from conftest import add_banner, make_screen
 
-from whs_recorder.marker_recorder import _capture_result
+from whs_recorder.marker_recorder import Session, _capture_result, _guess_action
+from whs_recorder.suggest import Suggestion
 
 GREEN = (0, 200, 0)
 RED = (0, 0, 220)
@@ -88,3 +89,36 @@ def test_the_window_is_respected():
     _capture_result(grabber([make_screen()]), None, 0.2, threading.Event(), sample_sec=0.02)
 
     assert 0.15 <= time.time() - started < 1.0
+
+
+# --------------------------------------------------------- recording silently
+
+
+def test_a_typed_value_is_recorded_as_an_entry():
+    assert _guess_action("mouse_click", Suggestion(value="12")) == "enter"
+
+
+def test_a_value_that_arrived_on_enter_is_recorded_as_a_scan():
+    # A handheld scanner sends the barcode followed by Enter, which is what
+    # tells a scan apart from someone typing into the same field.
+    assert _guess_action("enter", Suggestion(value="LP000123")) == "scan"
+
+
+def test_a_step_with_no_value_is_recorded_as_a_tap():
+    assert _guess_action("mouse_click", Suggestion(control="Inbound")) == "tap"
+    assert _guess_action("enter", Suggestion()) == "tap"
+
+
+def test_a_session_starts_empty_and_running():
+    session = Session()
+
+    assert session.steps == 0
+    assert session.stop.is_set() is False
+    assert "Nothing recorded" in session.last
+
+
+def test_stopping_a_session_is_what_the_recorder_waits_on():
+    session = Session()
+    session.stop.set()
+
+    assert session.stop.wait(0) is True
