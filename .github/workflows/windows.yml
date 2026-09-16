@@ -11,6 +11,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a release for the version in pyproject.toml"
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -77,14 +82,27 @@ jobs:
           path: dist/WHS Task Recorder.exe
           if-no-files-found: error
 
+      - name: Read the version being released
+        id: version
+        run: |
+          $version = python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])"
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+
+      # A release normally comes from pushing a tag. Running this workflow by
+      # hand with 'publish' ticked does the same thing, tagging whatever
+      # version pyproject.toml carries - which is the only route available
+      # where tags cannot be pushed.
       - name: Attach it to the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           files: dist/WHS Task Recorder.exe
           body: |
-            Download `WHS Task Recorder.exe` below and run it. Nothing else to
-            install: no Python, no packages, no terminal.
+            Download **WHS.Task.Recorder.exe** from the Assets list below and
+            run it. Nothing else to install: no Python, no packages, no
+            terminal. (GitHub shows the name with dots instead of spaces.)
 
             Windows will warn that the file is unsigned the first time. Choose
             **More info**, then **Run anyway**.
