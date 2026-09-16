@@ -4,6 +4,8 @@ import os
 
 import pytest
 
+from conftest import open_window
+
 from whs_recorder.app import Launcher, command_environment, command_prefix
 from whs_recorder.recording import Recording, Step
 
@@ -19,14 +21,7 @@ def recording_path(tmp_path):
 
 @pytest.fixture
 def launcher():
-    tk = pytest.importorskip("tkinter")
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"no display: {exc}")
-    root.destroy()
-
-    app = Launcher()
+    app = open_window(Launcher)
     yield app
     try:
         app.root.destroy()

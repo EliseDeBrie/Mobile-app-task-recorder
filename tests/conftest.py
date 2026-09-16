@@ -49,6 +49,37 @@ def add_banner(frame, color, y1=560, y2=600):
     return out
 
 
+#: Phrases a TclError uses when the machine cannot open a window at all, as
+#: opposed to the code under test asking for something impossible.
+NO_TOOLKIT = (
+    "init.tcl",
+    "display",
+    "tcl wasn't installed",
+    "can't find a usable",
+)
+
+
+def open_window(build):
+    """Build a Tk window, or skip when this machine cannot open one.
+
+    A machine with no display cannot open a window, and the Windows runner has
+    been seen losing its Tcl install partway through a run. Neither says
+    anything about the code under test, so both skip. Any other TclError is a
+    real failure and is raised.
+
+    The window is built directly rather than after a throwaway probe: every Tk
+    root is another chance to meet that broken install, so there is no sense
+    creating two where one will do.
+    """
+    tkinter = pytest.importorskip("tkinter")
+    try:
+        return build()
+    except tkinter.TclError as exc:
+        if any(sign in str(exc).lower() for sign in NO_TOOLKIT):
+            pytest.skip(f"no windowing toolkit here: {exc}")
+        raise
+
+
 @pytest.fixture
 def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent

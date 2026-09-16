@@ -10,6 +10,8 @@ import os
 import numpy as np
 import pytest
 
+from conftest import open_window
+
 from whs_recorder.recording import InfoStep, Recording, Step, SubtaskEnd, SubtaskStart
 from whs_recorder.review import Review, describe, lines
 from whs_recorder.utils import write_image
@@ -36,14 +38,7 @@ def recording_path(tmp_path):
 @pytest.fixture
 def window(recording_path):
     """A real review window, or a skip where no display is available."""
-    tk = pytest.importorskip("tkinter")
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"no display: {exc}")
-    root.destroy()
-
-    review = Review(recording_path)
+    review = open_window(lambda: Review(recording_path))
     yield review
     try:
         review.root.destroy()
@@ -253,15 +248,8 @@ def test_an_untouched_recording_is_not_reported_as_changed(window):
 
 
 def test_building_hands_the_saved_path_over(recording_path):
-    tk = pytest.importorskip("tkinter")
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"no display: {exc}")
-    root.destroy()
-
     built = []
-    review = Review(recording_path, on_build=built.append)
+    review = open_window(lambda: Review(recording_path, on_build=built.append))
     review._show(4)
     review.fields["control"].set("Licence plate")
     review._save_and_build()
@@ -274,13 +262,6 @@ def test_building_hands_the_saved_path_over(recording_path):
 
 
 def test_the_screenshot_of_the_picked_step_is_shown(tmp_path):
-    tk = pytest.importorskip("tkinter")
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"no display: {exc}")
-    root.destroy()
-
     shot = tmp_path / "shots" / "step1.png"
     write_image(str(shot), np.full((640, 360, 3), 200, dtype=np.uint8))
 
@@ -289,7 +270,7 @@ def test_the_screenshot_of_the_picked_step_is_shown(tmp_path):
     path = tmp_path / "recording.json"
     r.save(str(path))
 
-    review = Review(str(path))
+    review = open_window(lambda: Review(str(path)))
     try:
         assert review.photo is not None
         # Scaled down to fit the column rather than shown at full size.
@@ -308,13 +289,6 @@ def test_a_missing_screenshot_says_so_instead_of_failing(window):
 
 
 def test_a_step_without_a_screenshot_does_not_keep_showing_the_last_one(tmp_path):
-    tk = pytest.importorskip("tkinter")
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"no display: {exc}")
-    root.destroy()
-
     shot = tmp_path / "shots" / "step1.png"
     write_image(str(shot), np.full((640, 360, 3), 200, dtype=np.uint8))
 
@@ -324,7 +298,7 @@ def test_a_step_without_a_screenshot_does_not_keep_showing_the_last_one(tmp_path
     path = tmp_path / "recording.json"
     r.save(str(path))
 
-    review = Review(str(path))
+    review = open_window(lambda: Review(str(path)))
     try:
         assert review.photo is not None
         review._show(1)
