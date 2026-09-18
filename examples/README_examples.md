@@ -74,10 +74,12 @@ the wording yourself. `--no-suggest` turns the reading off.
 If you would rather name each step as you take it, `--ask-each-step` brings back
 a popup per action, showing the sentence your answers produce.
 
-Each step is captured twice: once at the action, and again over the next couple of
-seconds, keeping the frame that shows the result banner. Your next tap ends that
-watch early, so working quickly costs nothing but the result picture of a step
-that had no banner to show. Screenshots land in a folder beside the recording,
+Each step keeps the screen as it was when you tapped, grabbed at the tap itself
+with a ring where the tap landed (`--no-tap-marker` leaves it off). A third of a
+second later the app is greyed out or loading, which is why the picture is not
+taken then. The region is then watched over the next couple of seconds for the
+result banner. Your next tap ends that watch early, so working quickly costs
+nothing but the result picture of a step that had no banner to show. Screenshots land in a folder beside the recording,
 and `--redact` applies your rules as they are written. Give a slow device more room with `--result-window 4.0`, or turn the
 capture off with `--no-screenshots` if you would rather build from a video.
 

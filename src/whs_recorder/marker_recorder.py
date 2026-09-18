@@ -371,6 +371,28 @@ def _guess_action(reason: str, suggestion: Suggestion) -> str:
     return "tap"
 
 
+def draw_tap_marker(frame: np.ndarray, point: Optional[Tuple[int, int]]) -> np.ndarray:
+    """A copy of `frame` with a ring where the tap landed, as Task Recorder
+    outlines the control it recorded. The original is left alone: it is also
+    the baseline the result banner is judged against, and a red ring would
+    look like one."""
+    if frame is None or point is None:
+        return frame
+    height, width = frame.shape[:2]
+    x, y = int(point[0]), int(point[1])
+    if not (0 <= x < width and 0 <= y < height):
+        return frame
+
+    marked = frame.copy()
+    # Wide enough to surround a word rather than sit on its letters: a ring
+    # the size of a fingertip covers the very thing it is pointing at.
+    radius = max(int(min(height, width) * 0.08), 26)
+    # A pale outer ring keeps the red one visible on a red button.
+    cv2.circle(marked, (x, y), radius + 2, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.circle(marked, (x, y), radius, (40, 40, 220), 2, cv2.LINE_AA)
+    return marked
+
+
 def _signature(frame: np.ndarray) -> np.ndarray:
     """A small grey copy of a frame, cheap to compare with the next one."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -389,6 +411,11 @@ class StepTracker:
     So the watch runs alongside, and the next tap ends it. The screen the user
     tapped on next is the result there was, and the recorder is free to write
     the new tap down the moment it happens.
+
+    The picture a step keeps is the screen *as it was tapped*, grabbed at the
+    tap itself. The frame a third of a second later - the one the change is
+    judged from - is the app's reaction: a greyed page, a spinner, half of the
+    next screen. Task Recorder shows the screen you acted on, and so does this.
 
     Everything that touches the screen, the OCR engine or a window is handed in,
     which is what lets this be exercised with a list of frames and a clock.
@@ -409,6 +436,7 @@ class StepTracker:
         min_gap_sec: float,
         result_window: float,
         capture_screenshots: bool = True,
+        mark_taps: bool = True,
     ):
         self.recording = recording
         self.grab = grab
@@ -422,10 +450,12 @@ class StepTracker:
         self.min_gap_sec = min_gap_sec
         self.result_window = result_window
         self.capture_screenshots = capture_screenshots
+        self.mark_taps = mark_taps
 
         self._lock = threading.Lock()
         self._busy = False
         self._pending = None  # the last step, whose result is still being watched
+        self._at_tap = None  # the screen as it was when the last tap landed
 
         self.last_frame = grab()
         self.last_sig = _signature(self.last_frame)
@@ -453,16 +483,20 @@ class StepTracker:
     # -------------------------------------------------------------- one tap
 
     def notice_tap(self) -> None:
-        """A tap has just happened: end the previous step's result watch now.
+        """A tap has just happened: keep the screen as it is, and end the
+        previous step's result watch.
 
-        The watch has to stop at the tap itself, not when the tap is looked at
-        a moment later. By then the screen has changed, and the last frame the
-        watch saw would be the new screen - which, used as the baseline, makes
-        the new tap look like it changed nothing.
+        Both have to happen at the tap itself, not when the tap is looked at
+        a moment later. By then the app has reacted: the screen is greyed
+        out, or loading, or already the next one. A frame grabbed now is the
+        screen the person acted on, which is the picture the step keeps and
+        the baseline its change is measured from.
         """
         pending = self._pending
         if pending is not None:
             pending[3].set()
+        if self.capture_screenshots:
+            self._at_tap = self.grab()
 
     def consider(self, reason: str, click: Optional[Tuple[int, int]], now: float) -> Optional[Step]:
         """Decide whether the tap just taken is a step, and write it if so."""
@@ -472,15 +506,18 @@ class StepTracker:
             return None
 
         try:
-            # The previous step's result watch was stopped at the tap; its
-            # last frame is the screen the tap was taken on, which is that
-            # step's result and the baseline for this one.
+            # The previous step's result watch was stopped at the tap. The
+            # screen as it was at the tap is the baseline for this step; the
+            # watch's last frame stands in when there was no tap to grab at,
+            # such as an Enter with no click before it.
             self._settle()
-            before = self.last_frame
+            at_tap, self._at_tap = self._at_tap, None
+            before = at_tap if at_tap is not None else self.last_frame
+            base_sig = _signature(before) if at_tap is not None else self.last_sig
 
             frame = self.grab()
             signature = _signature(frame)
-            diff = mean_abs_diff(signature, self.last_sig)
+            diff = mean_abs_diff(signature, base_sig)
             if diff < self.diff_threshold:
                 self.last_frame, self.last_sig = frame, signature
                 return None
@@ -526,7 +563,9 @@ class StepTracker:
             step.reason = reason
             step.diff = round(diff, 2)
             if self.capture_screenshots:
-                step.action_img = self.save_shot(frame, f"step_{step_no:02d}_action.png")
+                # The screen as it was tapped, with the tap marked on it.
+                picture = draw_tap_marker(before, click) if self.mark_taps else before
+                step.action_img = self.save_shot(picture, f"step_{step_no:02d}_action.png")
 
             self.last_screen = step.screen or self.last_screen
             self.last_mark_t = now
@@ -583,6 +622,7 @@ def run_marker_recorder(
     ask_each_step: bool = False,
     result_window: float = RESULT_WINDOW_SEC,
     redaction: Optional[RedactionConfig] = None,
+    mark_taps: bool = True,
 ):
     """Record a task recording for a handheld process."""
     from pynput import keyboard, mouse
@@ -700,7 +740,7 @@ def run_marker_recorder(
             )
 
     def read_screen(frame, click, before) -> Suggestion:
-        return suggest_step(frame, point=region_point(click), before=before)
+        return suggest_step(frame, point=click, before=before)
 
     def ask_about(step_no, reason, diff, suggestion, last_screen) -> Optional[Step]:
         return dialogs.ask(
@@ -725,16 +765,20 @@ def run_marker_recorder(
         min_gap_sec=min_gap_sec,
         result_window=result_window,
         capture_screenshots=capture_screenshots,
+        mark_taps=mark_taps,
     )
 
     def maybe_mark(reason: str):
-        nonlocal pending_timer
+        nonlocal pending_timer, last_click
         with lock:
             pending_timer = None
-        # A click is only a step where the tap landed: a click on the launcher
-        # or the bar says nothing about the app.
-        click = last_click if reason == "mouse_click" else None
-        tracker.consider(reason, click, elapsed())
+        # Where the tap landed, in the region's own coordinates; a click on
+        # the launcher or the bar is outside it and says nothing about the
+        # app. An Enter keeps the last click, which is usually the field that
+        # was tapped into before the scan, and it is spent by the step.
+        click = region_point(last_click)
+        if tracker.consider(reason, click, elapsed()) is not None:
+            last_click = None
 
     def schedule_check(reason: str):
         nonlocal pending_timer

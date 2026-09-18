@@ -18,11 +18,13 @@ same kind of task guide, down to how the step sentences are generated. See
    Greenshot and PowerPoint's screen clipping work. Then work through the
    process as you normally would, with nothing to answer: every tap or Enter
    that visibly changes that region is written down by itself, reading the
-   screen for the field, the button and the value. Each step captures the app
-   region twice — at the action, and again over the next couple of seconds,
-   keeping the frame that shows the result banner; your next tap ends that
-   watch, so nothing waits on it. A small bar beside the app shows the step
-   count and has the stop button on it.
+   screen for the field, the button and the value. Each step keeps the screen
+   as it was when you tapped — grabbed at the tap itself, so it is never the
+   greyed or half-loaded page that follows — with a ring where the tap landed,
+   the way Task Recorder outlines the control. The region is then watched for
+   a couple of seconds for the result banner; your next tap ends that watch,
+   so nothing waits on it. A small bar beside the app shows the step count and
+   has the stop button on it.
 2. **The document is made** the moment you stop — a Word file with the same
    name as the recording, beside it — and the recorded steps open in a list,
    each with its screenshot. Correct any wording the screen was read wrong,

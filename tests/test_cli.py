@@ -447,3 +447,21 @@ def test_build_places_no_document_unless_asked(monkeypatch):
     cli.main(["build", "--markers", "m.json", "--out", "o"])
 
     assert seen["document"] is None
+
+
+def test_mark_draws_the_tap_marker_unless_told_not_to(monkeypatch):
+    seen = {}
+
+    def fake_recorder(**kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setitem(
+        __import__("sys").modules, "whs_recorder.marker_recorder",
+        type("M", (), {"run_marker_recorder": staticmethod(fake_recorder)}),
+    )
+
+    cli.main(["mark", "--out", "r.json", "--region", "full"])
+    assert seen["mark_taps"] is True
+
+    cli.main(["mark", "--out", "r.json", "--region", "full", "--no-tap-marker"])
+    assert seen["mark_taps"] is False

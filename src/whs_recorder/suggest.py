@@ -4,8 +4,10 @@ Task Recorder never has to ask what was clicked: every control reports itself.
 Here there is only a picture, so the next best thing is to read it. Where OCR is
 available this offers three answers:
 
-* the **screen** you are on, taken from the title band at the top,
-* the **control** you used, taken from the text at or just above the tap,
+* the **screen** you were on, taken from the title band at the top of the
+  screen as it was when you tapped,
+* the **control** you used, taken from the text at or just above the tap on
+  that same screen,
 * the **value** that appeared, taken from the text that was not there before.
 
 They are guesses, and the review window is where they are corrected. Without
@@ -160,14 +162,20 @@ def suggest_step(
             lines = after_job.result()
             before_lines = before_job.result()
 
-    if not lines:
+    if not lines and not before_lines:
         return Suggestion()
 
     height = after.shape[0]
     label_gap, value_gap = near_gaps(height)
 
-    screen = screen_title(lines, height)
-    control = control_at(lines, point, skip=screen, near=label_gap)
+    # The screen and the control are read off the frame from *before* the
+    # tap: that is the screen the person was on and the button under their
+    # finger. A tap on "Inbound" is followed by a different screen, and
+    # reading the control off that one found whatever had landed at the same
+    # spot, or nothing. Without a before frame the after frame has to do.
+    acted_on = before_lines if before is not None else lines
+    screen = screen_title(acted_on, height)
+    control = control_at(acted_on, point, skip=screen, near=label_gap)
 
     value = ""
     if before is not None:

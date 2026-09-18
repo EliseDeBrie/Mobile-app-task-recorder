@@ -36,6 +36,8 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--ocr", choices=("windows", "tesseract", "none"), default="",
                    help="Force an OCR engine instead of taking whichever is available")
     m.add_argument("--redact", help="Redaction rules JSON applied to screenshots as they are captured")
+    m.add_argument("--no-tap-marker", action="store_true",
+                   help="Do not draw a ring where the tap landed on each step's screenshot")
     m.add_argument("--result-window", type=float, default=2.5,
                    help="Seconds to keep watching after a step for the result message")
     m.add_argument("--threshold", type=float, default=7.5, help="Screen change threshold (higher=fewer steps)")
@@ -157,6 +159,7 @@ def run(args):
             ask_each_step=args.ask_each_step,
             result_window=args.result_window,
             redaction=load_redaction_config(args.redact),
+            mark_taps=not args.no_tap_marker,
         )
         return
 

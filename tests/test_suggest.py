@@ -114,6 +114,22 @@ def test_suggest_step_reads_a_whole_step_off_the_screen():
     assert found.value == "PO000045"
 
 
+def test_the_control_comes_from_the_screen_that_was_tapped():
+    """Tapping "Inbound" is followed by a different screen. The button is on
+    the one from before the tap; reading the one after found what had landed
+    at the same spot, or nothing."""
+    menu = [
+        line("Main menu", 16, 18, width=200, height=26),
+        line("Inbound", 40, 300, width=120, height=30),
+    ]
+    read = reader({1: SCREEN, 2: menu})
+
+    found = suggest_step(frame(1), point=(80, 315), before=frame(2), reader=read)
+
+    assert found.screen == "Main menu"
+    assert found.control == "Inbound"
+
+
 def test_suggest_step_without_a_previous_frame_offers_no_value():
     read = reader({1: SCREEN})
 

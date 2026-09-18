@@ -70,21 +70,32 @@ def tap(tracker, screen, frame, now, reason="mouse_click", click=(100, 100)):
     return tracker.consider(reason, click, now)
 
 
-def tracker_for(screen, watch, *, ask=None, suggest=None, saved=None, min_gap=0.75, window=2.5):
+def tracker_for(screen, watch, *, ask=None, suggest=None, saved=None, pictures=None,
+                min_gap=0.75, window=2.5, mark_taps=True):
     recording = Recording(name="Taps")
     shots = saved if saved is not None else []
+    frames = pictures if pictures is not None else {}
+
+    def save_shot(frame, name):
+        if frame is None:
+            return ""
+        shots.append(name)
+        frames[name] = frame
+        return name
+
     return recording, StepTracker(
         recording,
         grab=screen.grab,
         watch=watch,
         suggest=suggest,
         ask=ask,
-        save_shot=lambda frame, name: (shots.append(name), name)[1] if frame is not None else "",
+        save_shot=save_shot,
         persist=lambda: None,
         announce=lambda step: None,
         diff_threshold=7.5,
         min_gap_sec=min_gap,
         result_window=window,
+        mark_taps=mark_taps,
     )
 
 
@@ -329,3 +340,105 @@ def test_the_result_is_written_even_when_the_persist_step_is_slow(monkeypatch):
     tracker.finish()
 
     assert writes == [1, 1]
+
+
+# ------------------------------------------------------- the step's picture
+
+
+def test_the_picture_is_the_screen_as_it_was_tapped_not_the_reaction():
+    """A third of a second after a tap the app is greyed out or loading. The
+    step keeps the screen the person acted on, grabbed at the tap itself."""
+    screen = FakeScreen(make_screen(seed=0))
+    pictures = {}
+    recording, tracker = tracker_for(screen, SlowWatch(screen), pictures=pictures, mark_taps=False)
+
+    tracker.notice_tap()                     # the tap, on the untouched screen
+    greyed = (screen_after_tap(1) // 2).astype(np.uint8)
+    screen.frame = greyed                    # and the app's greyed reaction
+    step = tracker.consider("mouse_click", (100, 100), now=1.0)
+
+    assert step is not None
+    assert np.array_equal(pictures[step.action_img], make_screen(seed=0))
+
+
+def test_the_tap_is_marked_on_the_picture():
+    screen = FakeScreen(make_screen(seed=0))
+    pictures = {}
+    recording, tracker = tracker_for(screen, SlowWatch(screen), pictures=pictures)
+
+    step = tap(tracker, screen, screen_after_tap(1), now=1.0, click=(100, 100))
+
+    picture = pictures[step.action_img]
+    assert not np.array_equal(picture, make_screen(seed=0))   # something was drawn
+    around = picture[100 - 40:100 + 40, 100 - 40:100 + 40]
+    assert (around[:, :, 2] > 180).any()                      # red, around the tap
+    centre = picture[100 - 8:100 + 8, 100 - 8:100 + 8]
+    assert np.array_equal(centre, make_screen(seed=0)[92:108, 92:108])  # not on the target
+    far = picture[400:440, 200:240]
+    assert np.array_equal(far, make_screen(seed=0)[400:440, 200:240])  # elsewhere untouched
+
+
+def test_the_marker_never_touches_the_baseline_the_banner_is_judged_against():
+    screen = FakeScreen(make_screen(seed=0))
+    baselines = []
+
+    def watch(baseline, stop, holder):
+        baselines.append(baseline)
+        holder["last"] = screen.frame
+        holder["frame"], holder["toast"] = screen.frame, ""
+
+    recording, tracker = tracker_for(screen, watch)
+    tap(tracker, screen, screen_after_tap(1), now=1.0, click=(100, 100))
+
+    assert np.array_equal(baselines[0], make_screen(seed=0))  # no ring on it
+
+
+def test_a_tap_outside_the_region_leaves_the_picture_unmarked():
+    screen = FakeScreen(make_screen(seed=0))
+    pictures = {}
+    recording, tracker = tracker_for(screen, SlowWatch(screen), pictures=pictures)
+
+    step = tap(tracker, screen, screen_after_tap(1), now=1.0, click=None)
+
+    assert np.array_equal(pictures[step.action_img], make_screen(seed=0))
+
+
+def test_the_control_is_read_off_the_screen_that_was_tapped():
+    """After tapping "Inbound" the screen is a different one; the button is
+    on the screen from before the tap."""
+    screen = FakeScreen(make_screen(seed=0))
+    handed = {}
+
+    def read(frame, click, before):
+        handed["frame"], handed["before"] = frame, before
+        return Suggestion(control="Inbound")
+
+    recording, tracker = tracker_for(screen, SlowWatch(screen), suggest=read)
+    tap(tracker, screen, screen_after_tap(1), now=1.0)
+
+    assert np.array_equal(handed["before"], make_screen(seed=0))
+    assert np.array_equal(handed["frame"], screen_after_tap(1))
+
+
+def test_the_change_is_measured_from_the_screen_at_the_tap():
+    """The baseline for 'did this tap change anything' is the screen at the
+    tap, not a frame from some time before it."""
+    screen = FakeScreen(make_screen(seed=0))
+    recording, tracker = tracker_for(screen, SlowWatch(screen))
+
+    # The screen changed on its own, without a tap - an animation settling.
+    screen.frame = screen_after_tap(3)
+    tracker.notice_tap()                     # a tap on that changed screen,
+    step = tracker.consider("mouse_click", (100, 100), now=1.0)   # changing nothing
+
+    assert step is None
+
+
+def test_marking_can_be_turned_off():
+    from whs_recorder.marker_recorder import draw_tap_marker
+
+    frame = make_screen(seed=0)
+    assert draw_tap_marker(frame, None) is frame
+    assert draw_tap_marker(frame, (-5, 10)) is frame
+    assert draw_tap_marker(frame, (10, 10_000)) is frame
+    assert draw_tap_marker(None, (10, 10)) is None
