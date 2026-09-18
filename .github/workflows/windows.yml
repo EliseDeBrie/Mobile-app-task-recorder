@@ -82,7 +82,11 @@ jobs:
         # notice if it were not.
         run: |
           python packaging\smoke.py smoke
-          & ".\dist\WHS Task Recorder.exe" build --markers smoke\recording.json --out smoke\build --document smoke\guide.docx --skip-loading
+          # Piped, so PowerShell waits for it: the program is a windowed one,
+          # and a windowed program returns to the shell at once unless its
+          # output is being read. Without this the check below ran first.
+          $built = & ".\dist\WHS Task Recorder.exe" build --markers smoke\recording.json --out smoke\build --document smoke\guide.docx --skip-loading | Out-String
+          Write-Host $built
           if (-not (Test-Path smoke\guide.docx)) {
             Write-Error "The packaged program built no document."
             exit 1
