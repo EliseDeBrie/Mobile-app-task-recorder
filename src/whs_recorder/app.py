@@ -19,15 +19,17 @@ while recording leaves this window standing.
 """
 
 import collections
+import contextlib
 import os
 import queue
 import subprocess
 import sys
 import threading
-from typing import Callable, List, Optional
+from typing import Any, List, Optional
 
 from . import __version__
 from .branding import apply_icon
+from .dialogs import collect_windows
 
 WINDOW_TITLE = f"WHS Task Recorder {__version__}"
 DEFAULT_FOLDER = os.path.join(os.path.expanduser("~"), "Documents", "WHS recordings")
@@ -87,11 +89,12 @@ class Launcher:
         self.messages: "queue.Queue[str]" = queue.Queue()
         #: Work for the window's own thread, handed over from the worker: Tk
         #: may only be driven from the thread that owns it.
-        self.calls: "queue.Queue[Callable[[], None]]" = queue.Queue()
-        self.running: Optional[subprocess.Popen] = None
-        #: Whether a command is running or about to, and the ones waiting
+        self.calls: "queue.Queue[Any]" = queue.Queue()
+        #: The command running now, if any: its process and what to do when
+        #: it ends. Whether one is running or about to, and the ones waiting
         #: their turn. Two builds writing the same document at once would
         #: corrupt it, so commands run one after another.
+        self.job: Optional[dict] = None
         self.active = False
         self.waiting = collections.deque()
         self.reviewing = None
@@ -232,8 +235,16 @@ class Launcher:
             build,
             "Which recording?",
             "Filled in for you after a recording. Browse to pick an older one: the recording "
-            "is the .json file, and its document is the .docx of the same name beside it.",
+            "is the .json file.",
             browse=self._pick_recording,
+        )
+        self.document_file = self._field(
+            build,
+            "Save the document as",
+            "Filled in for you: the process name, in the folder above. Browse to put it "
+            "somewhere else or call it something else - a customer's project folder, say. "
+            "It is replaced each time the document is made.",
+            browse=self._pick_document,
         )
 
         ttk.Label(build, text="What kind of document?", style="Field.TLabel").pack(
@@ -295,8 +306,8 @@ class Launcher:
         self.log.configure(state="disabled")
 
     def _drain(self) -> None:
-        """Move output from the worker thread into the log, and run what the
-        worker asked the window to do."""
+        """Move output from the worker thread into the log, and act on what
+        the worker reported - on this thread, the one that owns the window."""
         try:
             while True:
                 self._say(self.messages.get_nowait())
@@ -304,10 +315,19 @@ class Launcher:
             pass
         try:
             while True:
-                self.calls.get_nowait()()
+                item = self.calls.get_nowait()
+                if callable(item):
+                    item()
+                else:
+                    job, exit_code = item
+                    self._finished(job, exit_code)
         except queue.Empty:
             pass
         self.root.after(100, self._drain)
+
+    @property
+    def running(self) -> Optional[subprocess.Popen]:
+        return self.job.get("process") if self.job else None
 
     def _busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
@@ -336,6 +356,31 @@ class Launcher:
         )
         if chosen:
             self.recording_file.set(chosen)
+            self.document_file.set(document_for(chosen))
+
+    def _pick_document(self) -> None:
+        from tkinter import filedialog
+
+        current = self.document_file.get().strip() or document_for(
+            self.recording_file.get() or self.recording_path()
+        )
+        chosen = filedialog.asksaveasfilename(
+            initialdir=os.path.dirname(current) or self.folder.get(),
+            initialfile=os.path.basename(current),
+            defaultextension=".docx",
+            filetypes=[("Word document", "*.docx")],
+        )
+        if chosen:
+            self.document_file.set(chosen)
+
+    def document_path(self, recording_path: str) -> str:
+        """Where the document goes: where the person said, else beside the recording."""
+        chosen = self.document_file.get().strip()
+        if not chosen:
+            return document_for(recording_path)
+        if not chosen.lower().endswith(".docx"):
+            chosen += ".docx"
+        return chosen
 
     def _open_folder(self) -> None:
         folder = self.folder.get()
@@ -353,9 +398,15 @@ class Launcher:
         finished cleanly; `on_finish` runs however it ended, with the exit
         code, for the caller that can judge for itself whether the outcome is
         usable. Both run on the window's thread: a Tk window may only be
-        opened from the thread that owns it.
+        driven from the thread that owns it.
 
         One command at a time: a second request waits for the first to finish.
+
+        The worker thread is handed the queues and a job record, and never the
+        window. A thread that holds the window can end up the last to let go
+        of it, and Tk aborts the whole process when a window is finalised on
+        a thread other than the one that made it - which is how the recorder
+        used to crash on every Stop.
         """
         if self.active:
             self.waiting.append((args, done, on_success, on_finish))
@@ -363,42 +414,55 @@ class Launcher:
         self.active = True
         self._busy(True)
 
+        job = {"on_success": on_success, "on_finish": on_finish, "process": None}
+        self.job = job
+        messages, calls = self.messages, self.calls
+        command = command_prefix() + args
+        environment = command_environment()
+
         def worker():
+            exit_code = -1
             try:
                 process = subprocess.Popen(
-                    command_prefix() + args,
+                    command,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
-                    env=command_environment(),
+                    env=environment,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
-                self.running = process
+                job["process"] = process
                 for line in process.stdout:
-                    self.messages.put(line)
+                    messages.put(line)
                 process.wait()
-                self.messages.put(done if process.returncode == 0 else "Stopped with an error.")
-                if process.returncode == 0 and on_success is not None:
-                    self.calls.put(on_success)
-                if on_finish is not None:
-                    self.calls.put(lambda: on_finish(process.returncode))
+                exit_code = process.returncode
+                messages.put(done if exit_code == 0 else "Stopped with an error.")
             except Exception as exc:
-                self.messages.put(f"Could not run it: {exc}")
-                if on_finish is not None:
-                    self.calls.put(lambda: on_finish(-1))
+                messages.put(f"Could not run it: {exc}")
             finally:
-                self.running = None
-                self.calls.put(self._finished)
+                job["process"] = None
+                calls.put((job, exit_code))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _finished(self) -> None:
-        """A command is over: free the buttons, and start the next one waiting."""
+    def _finished(self, job: dict, exit_code: int) -> None:
+        """A command is over: free the buttons, act on how it ended, and
+        start the next one waiting."""
+        if job is self.job:
+            self.job = None
         self.active = False
         self._busy(False)
-        if self.waiting:
+        # Any window closed since the last command - the review, a file
+        # dialog - is freed here, on the window thread, before the next worker
+        # thread can be the one to free it and take the process down.
+        collect_windows()
+        if exit_code == 0 and job["on_success"] is not None:
+            job["on_success"]()
+        if job["on_finish"] is not None:
+            job["on_finish"](exit_code)
+        if self.waiting and not self.active:
             self._run(*self.waiting.popleft())
 
     def _check(self) -> None:
@@ -416,6 +480,8 @@ class Launcher:
         os.makedirs(self.folder.get(), exist_ok=True)
         path = self.recording_path()
         self.recording_file.set(path)
+        if not self.document_file.get().strip():
+            self.document_file.set(document_for(path))
 
         self._say(f"\nRecording to {path}")
         self._say("Drag a box around the warehouse app. Press 'Stop recording' when you are done.")
@@ -518,8 +584,8 @@ class Launcher:
         self._build_document(path, then_open=True)
 
     def _build_document(self, path: str, then_open: bool = False) -> None:
-        """Make the document for a recording, at a fixed name beside it."""
-        document = document_for(path)
+        """Make the document for a recording, where the person asked for it."""
+        document = self.document_path(path)
         self._say(f"\nMaking the document from {os.path.basename(path)}...")
         self._run(
             [
@@ -548,6 +614,11 @@ class Launcher:
 
     def run(self) -> None:
         self.root.mainloop()
+        # The window is closing: free it here, while a build may still be
+        # running on a worker thread that must not be the one to do it.
+        with contextlib.suppress(Exception):
+            self.root.destroy()
+        collect_windows()
 
 
 def borrow_parent_console() -> None:

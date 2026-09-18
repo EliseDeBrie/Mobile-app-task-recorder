@@ -22,6 +22,7 @@ import os
 from typing import Callable, Optional
 
 from .branding import apply_icon
+from .dialogs import collect_windows
 from .instructions import ACTION_CHOICES, ACTION_LABELS, PREFERRED
 from .recording import (
     INFO,
@@ -456,6 +457,10 @@ class Review:
             if answer:
                 self.save()
         self.root.destroy()
+        # Freed here, on the window's own thread: left to the garbage
+        # collector it would be freed on whichever thread ran it next, and Tk
+        # aborts the process when that is not the thread that made the window.
+        collect_windows()
         if self.on_closed is not None:
             self.on_closed(self.path)
 

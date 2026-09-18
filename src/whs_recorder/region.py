@@ -17,9 +17,8 @@ A region can be chosen three ways:
 import contextlib
 import os
 import re
-import threading
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 MIN_SIDE = 8  # a smaller drag is a stray click, not a selection
 
@@ -330,30 +329,6 @@ def select_region(parent=None) -> Optional[Region]:
     return chosen[0]
 
 
-def in_dialog_thread(dialog: Callable):
-    """Run a Tk dialog on a thread of its own, and wait for it.
-
-    Tk aborts if an interpreter is deleted from a thread other than the one that
-    created it. The recorder's step popups already run on worker threads, so
-    keeping every dialog off the main thread keeps that rule simple to hold.
-    """
-    box = {}
-
-    def call():
-        try:
-            box["value"] = dialog()
-        except BaseException as exc:  # carried back rather than lost in the thread
-            box["error"] = exc
-
-    thread = threading.Thread(target=call)
-    thread.start()
-    thread.join()
-
-    if "error" in box:
-        raise box["error"]
-    return box.get("value")
-
-
 def resolve_region(spec: Optional[str]) -> Optional[Region]:
     """Turn a `--region` value into a region.
 
@@ -364,8 +339,16 @@ def resolve_region(spec: Optional[str]) -> Optional[Region]:
     if not spec or spec.lower() == "full":
         return None
     if spec.lower() == "select":
+        from .dialogs import collect_windows
+
         use_physical_pixels()
-        return in_dialog_thread(select_region)
+        try:
+            return select_region()
+        finally:
+            # The overlay's canvas, picture and window refer to one another,
+            # so it is the cyclic collector's to free - and that runs on
+            # whichever thread next allocates. Free it here, on this one.
+            collect_windows()
     if spec.lower().startswith("window:"):
         region = region_from_window(spec.split(":", 1)[1])
         if region is None:

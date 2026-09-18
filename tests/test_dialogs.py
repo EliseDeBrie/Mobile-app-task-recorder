@@ -144,3 +144,27 @@ def test_serving_from_another_thread_is_refused():
     host.close()
 
     assert errors and "does not own" in errors[0]
+
+
+def test_a_dialog_is_freed_on_the_owning_thread_before_anyone_else_can():
+    """A closed window is cyclic garbage, and the cyclic collector runs on
+    whichever thread next triggers it. The owner collects first."""
+    import gc
+
+    from conftest import open_window
+
+    host = open_window(lambda: DialogHost().open())
+    try:
+        def open_and_close(root):
+            import tkinter as tk
+
+            window = tk.Toplevel(root)
+            tk.Label(window, text="gone in a moment").pack()
+            window.destroy()
+            return "closed"
+
+        assert host.ask(open_and_close) == "closed"
+        # Nothing left for another thread's collector to find.
+        assert gc.collect() == 0
+    finally:
+        host.close()

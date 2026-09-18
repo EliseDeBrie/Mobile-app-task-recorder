@@ -173,21 +173,24 @@ def test_window_lookup_explains_the_missing_dependency(monkeypatch):
         region_module.region_from_window("Warehouse")
 
 
-def test_a_dialog_thread_carries_its_error_back():
-    """Losing the error in the thread would look like the user simply cancelled."""
-    from whs_recorder.region import in_dialog_thread
+def test_selecting_a_region_runs_on_the_calling_thread(monkeypatch):
+    """It used to run on a thread of its own, which is the pattern that made Tk
+    abort the process at exit: the interpreter torn down from the wrong thread."""
+    import threading
 
-    def explode():
-        raise RuntimeError("the overlay failed to open")
+    from whs_recorder import region as region_module
 
-    with pytest.raises(RuntimeError, match="overlay failed"):
-        in_dialog_thread(explode)
+    seen = {}
 
+    def fake_select():
+        seen["thread"] = threading.get_ident()
+        return region_module.Region(1, 2, 30, 40)
 
-def test_a_dialog_thread_returns_its_answer():
-    from whs_recorder.region import Region, in_dialog_thread
+    monkeypatch.setattr(region_module, "select_region", fake_select)
+    monkeypatch.setattr(region_module, "use_physical_pixels", lambda: None)
 
-    assert in_dialog_thread(lambda: Region(1, 2, 30, 40)) == Region(1, 2, 30, 40)
+    assert region_module.resolve_region("select") == region_module.Region(1, 2, 30, 40)
+    assert seen["thread"] == threading.get_ident()
 
 
 def test_physical_pixels_are_asked_for_on_windows_only(monkeypatch):

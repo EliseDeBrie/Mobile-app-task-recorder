@@ -19,9 +19,18 @@ do exactly that at exit, and the recorder crashed on every Stop. So the root
 lives on the main thread, which is where Tk wants it, and the recorder's own
 waiting happens inside the pump rather than beside it. The background-thread
 form is kept for callers that have no main loop to give up.
+
+There is a second way to the same abort, and it is subtler. Tk widgets refer to
+each other in cycles - a window to its children, each child to its master - so
+a closed window is not freed when the last name for it goes, but by the cyclic
+garbage collector, which runs on whichever thread happens to allocate at the
+wrong moment. A result-watcher thread finishing was enough. So every window is
+collected here, on the owning thread, the moment it closes: `collect_windows`
+is called after each dialog and on close, and costs a few milliseconds.
 """
 
 import contextlib
+import gc
 import queue
 import threading
 from typing import Any, Callable, Optional
@@ -29,6 +38,13 @@ from typing import Any, Callable, Optional
 PUMP_MS = 40
 START_TIMEOUT_SEC = 20.0
 WATCH_INTERVAL_SEC = 0.5
+
+
+def collect_windows() -> int:
+    """Free closed windows now, on this thread, rather than on whichever
+    thread the garbage collector next happens to run on. See the module
+    docstring for why that thread must be the one that owns the windows."""
+    return gc.collect()
 
 
 class DialogHost:
@@ -92,6 +108,7 @@ class DialogHost:
         self._root = None
         self._owner = None
         self._ready.clear()
+        collect_windows()
 
     # ------------------------------------------------------ on its own thread
 
@@ -134,7 +151,10 @@ class DialogHost:
         if threading.get_ident() == self._owner:
             # Already on the owning thread: waiting on the queue would wait
             # for ourselves. The dialog can simply be run.
-            return dialog(self._root)
+            try:
+                return dialog(self._root)
+            finally:
+                collect_windows()
 
         if self._thread is not None and not self._thread.is_alive():
             raise RuntimeError("The dialog thread is gone; no window can be opened.")
@@ -182,6 +202,7 @@ class DialogHost:
                 except BaseException as exc:  # hand it to the caller, keep the thread
                     box["error"] = exc
                 finally:
+                    collect_windows()
                     done.set()
         except queue.Empty:
             pass
@@ -210,6 +231,13 @@ class DialogHost:
             self._root.destroy()
         self._root = None
         self._owner = None
+
+        # Whatever still refers to the interpreter - a closure the pump held,
+        # a widget a dialog returned - must be collected here, on the thread
+        # that made it. Left for another thread's garbage collector, the
+        # interpreter is deleted from the wrong thread and Tcl aborts the
+        # process, at some unrelated moment later on.
+        collect_windows()
 
 
 def wait_for(root, window) -> None:

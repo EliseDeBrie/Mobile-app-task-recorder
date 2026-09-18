@@ -102,6 +102,22 @@ def open_window(build):
         raise
 
 
+@pytest.fixture(autouse=True)
+def free_windows_on_this_thread():
+    """Collect garbage after every test, on the main thread.
+
+    Tk widgets refer to one another in cycles, so a window a test closed is
+    freed by the cyclic collector - on whichever thread next triggers it. In
+    a suite with threads coming and going that was a background thread, and
+    Tk aborted the whole run: "Tcl_AsyncDelete: async handler deleted by the
+    wrong thread". Freeing here keeps every window on the thread that made it.
+    """
+    yield
+    import gc
+
+    gc.collect()
+
+
 @pytest.fixture
 def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent

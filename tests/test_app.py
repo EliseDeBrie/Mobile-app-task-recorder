@@ -181,17 +181,50 @@ def test_commands_run_one_after_another_not_at_once(launcher, monkeypatch):
 
     monkeypatch.setattr("subprocess.Popen", fake_popen)
 
+    import threading
+
+    def settle():
+        for thread in threading.enumerate():
+            if thread is not threading.current_thread() and thread.daemon:
+                thread.join(timeout=2)
+        launcher._drain()
+
     launcher._run(["check", "first"], "one")
     launcher._run(["check", "second"], "two")
     assert started == ["first"]        # the second waits its turn
     assert len(launcher.waiting) == 1
 
-    import threading
-    for thread in threading.enumerate():
-        if thread is not threading.current_thread() and thread.daemon:
-            thread.join(timeout=2)
-    launcher._drain()                  # the first finishes; the second starts
+    settle()                           # the first finishes; the second starts
     assert started == ["first", "second"]
+
+    settle()                           # and the second finishes, inside this test
+    assert launcher.active is False
+    assert launcher.job is None
+
+
+def test_the_worker_thread_never_holds_the_window(launcher, monkeypatch):
+    """A thread that holds the window can be the last to let go of it, and Tk
+    aborts the process when a window is finalised off its own thread."""
+    import threading
+
+    targets = []
+
+    class NoThread:
+        def __init__(self, target, daemon=False):
+            targets.append(target)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(threading, "Thread", NoThread)
+
+    launcher._run(["check"], "done", on_success=lambda: None)
+
+    worker = targets[0]
+    held = [cell.cell_contents for cell in worker.__closure__]
+    assert launcher not in held
+    assert not any(getattr(item, "__self__", None) is launcher for item in held)
+    assert launcher.messages in held and launcher.calls in held
 
 
 def test_the_command_it_runs_can_find_this_package(monkeypatch):
@@ -253,3 +286,61 @@ def test_the_worker_hands_window_work_to_the_window_thread(launcher, monkeypatch
     assert ran == ["success"]
     assert "one line" in log_of(launcher)
     assert str(launcher.record_button.cget("state")) == "normal"
+    assert launcher.running is None
+
+
+def test_the_document_goes_where_the_person_said(launcher, recording_path):
+    runs = _capture_runs(launcher)
+    launcher.document_file.set(r"C:\\Customers\\Solina\\Inbound guide.docx")
+
+    launcher._build_document(recording_path)
+
+    args = runs[0]["args"]
+    assert args[args.index("--document") + 1] == r"C:\\Customers\\Solina\\Inbound guide.docx"
+
+
+def test_a_document_name_without_the_extension_gets_it(launcher, recording_path):
+    launcher.document_file.set("Inbound guide")
+
+    assert launcher.document_path(recording_path) == "Inbound guide.docx"
+
+
+def test_an_empty_document_box_means_beside_the_recording(launcher, recording_path):
+    from whs_recorder.app import document_for
+
+    launcher.document_file.set("   ")
+
+    assert launcher.document_path(recording_path) == document_for(recording_path)
+
+
+def test_starting_a_recording_fills_the_document_box_in(launcher, tmp_path):
+    _capture_runs(launcher)
+    launcher.name.set("Receive a purchase order line")
+    launcher.folder.set(str(tmp_path))
+
+    launcher._record()
+
+    assert launcher.document_file.get() == os.path.join(
+        str(tmp_path), "Receive a purchase order line.docx"
+    )
+
+
+def test_a_document_place_chosen_beforehand_is_kept_when_recording_starts(launcher, tmp_path):
+    _capture_runs(launcher)
+    launcher.name.set("Receive a purchase order line")
+    launcher.folder.set(str(tmp_path))
+    launcher.document_file.set(str(tmp_path / "elsewhere" / "Guide.docx"))
+
+    launcher._record()
+
+    assert launcher.document_file.get() == str(tmp_path / "elsewhere" / "Guide.docx")
+
+
+def test_browsing_to_an_older_recording_points_the_document_beside_it(launcher, recording_path, monkeypatch):
+    from tkinter import filedialog
+
+    monkeypatch.setattr(filedialog, "askopenfilename", lambda **k: recording_path)
+
+    launcher._pick_recording()
+
+    assert launcher.document_file.get() == os.path.splitext(recording_path)[0] + ".docx"
