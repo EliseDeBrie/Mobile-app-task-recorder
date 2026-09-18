@@ -129,7 +129,7 @@ def test_the_python_check_reads_a_windows_install_location(monkeypatch):
     """"Program Files" has a space in it, which an earlier check missed."""
     monkeypatch.setattr(doctor.os, "name", "nt")
 
-    monkeypatch.setattr(doctor.sys, "prefix", r"C:\Users\elise\AppData\Local\Programs\Python\Python312")
+    monkeypatch.setattr(doctor.sys, "prefix", r"C:\Users\someone\AppData\Local\Programs\Python\Python312")
     assert "installed for this user" in doctor.check_python().detail
 
     monkeypatch.setattr(doctor.sys, "prefix", r"C:\Program Files\Python312")
