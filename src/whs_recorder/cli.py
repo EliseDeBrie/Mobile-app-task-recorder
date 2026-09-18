@@ -48,6 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--markers", required=True, help="Recording JSON path")
     b.add_argument("--out", required=True, help="Output folder")
     b.add_argument("--title", default=None, help="Document title (defaults to the recording name)")
+    b.add_argument("--document", default="",
+                   help="Also place the finished document at this exact path, replacing "
+                        "the previous one; the build itself still goes in a run folder under --out")
     b.add_argument("--style", choices=STYLES, default=TASK_GUIDE,
                    help="task-guide reproduces the D365 Task Recorder document; evidence pairs action and result")
     b.add_argument("--values", choices=VALUE_MODES, default=PREFERRED,
@@ -180,6 +183,7 @@ def run(args):
             style=args.style,
             value_mode=args.values,
             include_result=args.with_result,
+            document=args.document or None,
         )
         return
 

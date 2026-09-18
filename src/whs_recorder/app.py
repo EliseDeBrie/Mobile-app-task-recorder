@@ -3,7 +3,13 @@
 Everything this tool does is available from the command line, but a consultant
 on a customer's machine should not have to open a terminal to record a process.
 This is that window: name the recording, press a button, work through the
-process on the handheld, press stop.
+process on the handheld, press stop, and the Word document is there.
+
+The document is the point. It is made the moment a recording stops, made again
+whenever corrections are saved, and opened when the review window is closed,
+so nobody has to find a Build button to get what they came for. The recording
+itself - the JSON beside it - is what the document is made from, and is what
+'Check the steps' reopens.
 
 Recording runs as a separate process rather than inside this one. Tk keeps a
 per-thread interpreter, the recorder opens windows of its own on its own
@@ -12,6 +18,7 @@ render but never answer. A separate process sidesteps it entirely, and a crash
 while recording leaves this window standing.
 """
 
+import collections
 import os
 import queue
 import subprocess
@@ -36,6 +43,17 @@ def command_prefix() -> List[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable]
     return [sys.executable, "-m", "whs_recorder.cli"]
+
+
+def document_for(recording_path: str) -> str:
+    """The document a recording turns into: the same name, beside it."""
+    return os.path.splitext(recording_path)[0] + ".docx"
+
+
+def build_folder_for(recording_path: str) -> str:
+    """Where a recording's builds go: each build in a run folder of its own,
+    with its pictures and manifest, so no build overwrites another."""
+    return os.path.splitext(recording_path)[0] + "_build"
 
 
 def command_environment() -> dict:
@@ -71,6 +89,11 @@ class Launcher:
         #: may only be driven from the thread that owns it.
         self.calls: "queue.Queue[Callable[[], None]]" = queue.Queue()
         self.running: Optional[subprocess.Popen] = None
+        #: Whether a command is running or about to, and the ones waiting
+        #: their turn. Two builds writing the same document at once would
+        #: corrupt it, so commands run one after another.
+        self.active = False
+        self.waiting = collections.deque()
         self.reviewing = None
 
         self.root = tk.Tk()
@@ -194,8 +217,9 @@ class Launcher:
                 "The screen dims and you drag a box around the warehouse app window. "
                 "Then simply work through the process: every step is written down as you go, "
                 "with nothing to answer. A small bar shows the step count and has a stop "
-                "button on it (Ctrl+Shift+End stops it too). When you stop, the steps open "
-                "in a window where you can correct the wording."
+                "button on it (Ctrl+Shift+End stops it too). When you stop, the Word document "
+                "is made straight away, and the steps open in a window where you can correct "
+                "the wording; press Done there and the document opens."
             ),
             style="Hint.TLabel", wraplength=560, justify="left",
         ).pack(anchor="w")
@@ -207,7 +231,8 @@ class Launcher:
         self.recording_file = self._field(
             build,
             "Which recording?",
-            "Filled in for you after a recording. Browse to pick an older one.",
+            "Filled in for you after a recording. Browse to pick an older one: the recording "
+            "is the .json file, and its document is the .docx of the same name beside it.",
             browse=self._pick_recording,
         )
 
@@ -238,7 +263,8 @@ class Launcher:
         ttk.Label(
             build,
             text="'Check the steps' opens the list of recorded steps so you can correct the "
-                 "wording or leave a step out. It opens by itself when a recording finishes.",
+                 "wording or leave a step out; the document is remade when you save. "
+                 "'Build document' makes it again from the recording as it is, and opens it.",
             style="Hint.TLabel", wraplength=560, justify="left",
         ).pack(anchor="w", pady=(8, 0))
 
@@ -316,20 +342,25 @@ class Launcher:
         if not os.path.isdir(folder):
             self._say(f"Nothing there yet: {folder}")
             return
-        if os.name == "nt":
-            os.startfile(folder)  # noqa: S606 - the point is to open a folder
-        else:
-            subprocess.Popen(["xdg-open", folder])
+        self._open_path(folder)
 
     # ------------------------------------------------------------------ actions
 
-    def _run(self, args: List[str], done: str, on_success=None) -> None:
+    def _run(self, args: List[str], done: str, on_success=None, on_finish=None) -> None:
         """Run the tool as a command and stream its output into the log.
 
         `on_success` runs on the window's own thread once the command has
-        finished cleanly, which is how recording hands over to the review
-        window: a Tk window may only be opened from the thread that owns it.
+        finished cleanly; `on_finish` runs however it ended, with the exit
+        code, for the caller that can judge for itself whether the outcome is
+        usable. Both run on the window's thread: a Tk window may only be
+        opened from the thread that owns it.
+
+        One command at a time: a second request waits for the first to finish.
         """
+        if self.active:
+            self.waiting.append((args, done, on_success, on_finish))
+            return
+        self.active = True
         self._busy(True)
 
         def worker():
@@ -351,13 +382,24 @@ class Launcher:
                 self.messages.put(done if process.returncode == 0 else "Stopped with an error.")
                 if process.returncode == 0 and on_success is not None:
                     self.calls.put(on_success)
+                if on_finish is not None:
+                    self.calls.put(lambda: on_finish(process.returncode))
             except Exception as exc:
                 self.messages.put(f"Could not run it: {exc}")
+                if on_finish is not None:
+                    self.calls.put(lambda: on_finish(-1))
             finally:
                 self.running = None
-                self.calls.put(lambda: self._busy(False))
+                self.calls.put(self._finished)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _finished(self) -> None:
+        """A command is over: free the buttons, and start the next one waiting."""
+        self.active = False
+        self._busy(False)
+        if self.waiting:
+            self._run(*self.waiting.popleft())
 
     def _check(self) -> None:
         self._say("\nChecking this machine...")
@@ -379,9 +421,32 @@ class Launcher:
         self._say("Drag a box around the warehouse app. Press 'Stop recording' when you are done.")
         self._run(
             ["mark", "--out", path, "--name", self.name.get(), "--description", self.description.get()],
-            "Recording saved. Opening the steps so you can check them.",
-            on_success=lambda: self._review(path),
+            "Recording saved.",
+            on_finish=lambda code: self._after_recording(path, code),
         )
+
+    def _after_recording(self, path: str, exit_code: int = 0) -> None:
+        """The recording is in: make the document, and open the steps to check.
+
+        The document comes first and without being asked for, so that there
+        is one even if the review window is closed straight away. Saving
+        corrections makes it again.
+
+        The recorder saves the recording before it does anything else on the
+        way out, so an error at that point is not a reason to leave the
+        recording sitting there unbuilt: if the file is there, carry on, and
+        say what happened.
+        """
+        if not os.path.isfile(path):
+            self._say("No recording was saved, so there is nothing to build.")
+            return
+        if exit_code != 0:
+            self._say(
+                "The recorder reported an error on the way out, but the recording was "
+                "saved. Carrying on with it."
+            )
+        self._build_document(path)
+        self._review(path)
 
     def _review_chosen(self) -> None:
         """Open the review window for whichever recording is filled in."""
@@ -412,14 +477,28 @@ class Launcher:
             return
 
         try:
-            self.reviewing = Review(path, on_build=self._build_from)
+            self.reviewing = Review(
+                path,
+                on_saved=self._steps_saved,
+                on_closed=self._steps_done,
+            )
         except Exception as exc:
             self.reviewing = None
             self._say(f"Could not open the steps: {exc}")
             return
 
-        self._say(f"Checking the steps in {os.path.basename(path)}.")
+        self._say(
+            f"Checking the steps in {os.path.basename(path)}. Save remakes the document; "
+            f"Done makes it and opens it."
+        )
         self.reviewing.run()
+
+    def _steps_saved(self, path: str) -> None:
+        self._say("Steps saved. Updating the document...")
+        self._build_document(path)
+
+    def _steps_done(self, path: str) -> None:
+        self._build_document(path, then_open=True)
 
     def _review_open(self) -> bool:
         """Whether a review window from earlier is still on screen."""
@@ -430,22 +509,42 @@ class Launcher:
         except Exception:
             return False  # already gone, along with the widget that could say so
 
-    def _build_from(self, path: str) -> None:
-        self.recording_file.set(path)
-        self._build()
-
     def _build(self) -> None:
+        """The button: build the chosen recording's document and open it."""
         path = self.recording_file.get() or self.recording_path()
         if not os.path.isfile(path):
             self._say(f"No recording at {path}. Record one first, or browse to it.")
             return
+        self._build_document(path, then_open=True)
 
-        out = os.path.join(os.path.dirname(path), "guide")
-        self._say(f"\nBuilding from {os.path.basename(path)}...")
+    def _build_document(self, path: str, then_open: bool = False) -> None:
+        """Make the document for a recording, at a fixed name beside it."""
+        document = document_for(path)
+        self._say(f"\nMaking the document from {os.path.basename(path)}...")
         self._run(
-            ["build", "--markers", path, "--out", out, "--style", self.style.get(), "--skip-loading"],
-            "Document written. Press 'Open folder' to find it.",
+            [
+                "build", "--markers", path,
+                "--out", build_folder_for(path),
+                "--document", document,
+                "--style", self.style.get(),
+                "--skip-loading",
+            ],
+            f"Document ready: {document}",
+            on_success=(lambda: self._open_path(document)) if then_open else None,
         )
+
+    def _open_path(self, path: str) -> None:
+        """Open a file or folder with whatever Windows would open it with."""
+        if not os.path.exists(path):
+            self._say(f"Nothing at {path}.")
+            return
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # noqa: S606 - the point is to open it
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except OSError as exc:
+            self._say(f"Could not open {path}: {exc}")
 
     def run(self) -> None:
         self.root.mainloop()

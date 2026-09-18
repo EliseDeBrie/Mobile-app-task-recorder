@@ -188,3 +188,43 @@ def test_a_dialog_thread_returns_its_answer():
     from whs_recorder.region import Region, in_dialog_thread
 
     assert in_dialog_thread(lambda: Region(1, 2, 30, 40)) == Region(1, 2, 30, 40)
+
+
+def test_physical_pixels_are_asked_for_on_windows_only(monkeypatch):
+    from whs_recorder import region
+
+    calls = []
+
+    class Shcore:
+        @staticmethod
+        def SetProcessDpiAwareness(level):
+            calls.append(level)
+            return 0
+
+    monkeypatch.setattr(region.os, "name", "nt")
+    monkeypatch.setattr("ctypes.windll", type("W", (), {"shcore": Shcore})(), raising=False)
+
+    region.use_physical_pixels()
+    assert calls == [2]  # per-monitor awareness
+
+    monkeypatch.setattr(region.os, "name", "posix")
+    region.use_physical_pixels()
+    assert calls == [2]  # nothing more: not a Windows concern
+
+
+def test_a_windows_without_the_newer_call_falls_back_to_the_older_one(monkeypatch):
+    from whs_recorder import region
+
+    calls = []
+
+    class User32:
+        @staticmethod
+        def SetProcessDPIAware():
+            calls.append("old")
+            return 1
+
+    monkeypatch.setattr(region.os, "name", "nt")
+    monkeypatch.setattr("ctypes.windll", type("W", (), {"user32": User32})(), raising=False)
+
+    region.use_physical_pixels()
+    assert calls == ["old"]

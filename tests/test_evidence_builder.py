@@ -306,3 +306,34 @@ def test_a_video_of_the_app_window_alone_is_left_uncropped(video, tmp_path):
 
     run_dir, manifest = read_run(str(tmp_path / "out"))
     assert read_image(shot(run_dir, manifest, 0)).shape[:2] == (640, 360)
+
+
+def test_the_document_can_also_be_placed_at_a_fixed_name(tmp_path, recorded_screenshots):
+    """Every build has a run folder of its own; the launcher wants one file
+    with a name that stays the same and is replaced each time."""
+    wanted = tmp_path / "Receiving.docx"
+
+    first = build_evidence(markers=recorded_screenshots, out_dir=str(tmp_path / "out"),
+                           document=str(wanted))
+    assert wanted.is_file()
+    assert wanted.read_bytes() == open(first, "rb").read()
+
+    before = wanted.stat().st_mtime_ns
+    build_evidence(markers=recorded_screenshots, out_dir=str(tmp_path / "out"),
+                   document=str(wanted))
+    assert wanted.is_file()
+    assert wanted.stat().st_mtime_ns >= before
+
+
+def test_a_document_that_cannot_be_placed_says_where_the_build_is(tmp_path, recorded_screenshots, monkeypatch):
+    """Word holding the previous copy open is the usual reason."""
+    import shutil
+
+    def locked(*_args, **_kwargs):
+        raise PermissionError("being used by another process")
+
+    monkeypatch.setattr(shutil, "copyfile", locked)
+
+    with pytest.raises(RuntimeError, match="Close it if it is open"):
+        build_evidence(markers=recorded_screenshots, out_dir=str(tmp_path / "out"),
+                       document=str(tmp_path / "Receiving.docx"))

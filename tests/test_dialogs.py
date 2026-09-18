@@ -77,3 +77,70 @@ def test_asking_returns_what_the_dialog_returned(monkeypatch):
             host.ask(lambda root: (_ for _ in ()).throw(ValueError("bad step")))
     finally:
         host.stop()
+
+
+# ------------------------------------------------- the root on this thread
+
+
+def test_the_root_can_live_on_the_calling_thread():
+    from conftest import open_window
+
+    host = open_window(lambda: DialogHost().open())
+    try:
+        # From the owning thread a dialog runs at once, with the root.
+        assert host.ask(lambda root: root is host._root) is True
+    finally:
+        host.close()
+        assert host._root is None
+
+
+def test_serving_runs_dialogs_asked_for_from_other_threads():
+    """The recorder waits inside `serve`; its timer threads ask for windows."""
+    from conftest import open_window
+
+    host = open_window(lambda: DialogHost().open())
+    answers = []
+    over = threading.Event()
+
+    def elsewhere():
+        answers.append(host.ask(lambda root: "answered on the owner's thread"))
+        over.set()
+
+    threading.Thread(target=elsewhere, daemon=True).start()
+    try:
+        host.serve(until=over.is_set, poll_ms=10)
+    finally:
+        host.close()
+
+    assert answers == ["answered on the owner's thread"]
+
+
+def test_serving_ends_when_told_to_stop():
+    from conftest import open_window
+
+    host = open_window(lambda: DialogHost().open())
+    threading.Timer(0.05, host.stop).start()
+    try:
+        host.serve(until=lambda: False, poll_ms=10)  # returns only because of stop()
+    finally:
+        host.close()
+
+
+def test_serving_from_another_thread_is_refused():
+    from conftest import open_window
+
+    host = open_window(lambda: DialogHost().open())
+    errors = []
+
+    def elsewhere():
+        try:
+            host.serve(until=lambda: True)
+        except RuntimeError as exc:
+            errors.append(str(exc))
+
+    thread = threading.Thread(target=elsewhere)
+    thread.start()
+    thread.join(timeout=2)
+    host.close()
+
+    assert errors and "does not own" in errors[0]

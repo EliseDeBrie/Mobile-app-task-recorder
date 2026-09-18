@@ -429,3 +429,21 @@ def test_review_opens_the_recording_it_is_given(monkeypatch, recording_path):
 def test_review_needs_a_recording():
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args(["review"])
+
+
+def test_build_can_place_the_document_at_a_fixed_name(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(cli, "build_evidence", lambda **kwargs: seen.update(kwargs))
+
+    cli.main(["build", "--markers", "m.json", "--out", "o", "--document", "guide.docx"])
+
+    assert seen["document"] == "guide.docx"
+
+
+def test_build_places_no_document_unless_asked(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(cli, "build_evidence", lambda **kwargs: seen.update(kwargs))
+
+    cli.main(["build", "--markers", "m.json", "--out", "o"])
+
+    assert seen["document"] is None

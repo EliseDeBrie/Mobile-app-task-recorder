@@ -97,6 +97,17 @@ ACTION_CHOICES = [
 ]
 ACTION_LABELS = dict(ACTION_CHOICES)
 
+#: Wording for a value step whose control could not be read. "In the the
+#: control field" is what the fallback produced, and no reader should see it.
+NO_CONTROL_LABELS: Dict[str, str] = {
+    "Field_Value": "Enter %2.",
+    "Field_Value_Example": "Enter the value.",
+    "ScanField_Value": "Scan %2.",
+    "ScanField_Value_Example": "Scan the value from the label.",
+    "Checkbox_Value": "%2 the check box.",
+    "Checkbox_Value_Example": "Select or clear the check box.",
+}
+
 #: Values a checkbox step renders as, mirroring Task Recorder's value labels.
 CHECKBOX_VALUE_LABELS = {
     "true": "Select",
@@ -179,6 +190,14 @@ def render_instruction(
 
     control_label = (control or "").strip() or action.default_control or "the control"
     label = resolve_label(action, value_mode, instruction_label)
+
+    # A value step with no control name gets wording that does without one,
+    # rather than "In the the control field".
+    if not (control or "").strip() and action.is_property and not instruction_label:
+        example = value_mode == EXAMPLE and action.takes_value
+        label = NO_CONTROL_LABELS.get(
+            action.example_label_id if example else action.label_id, label
+        )
 
     if user_text:
         value_argument = user_text

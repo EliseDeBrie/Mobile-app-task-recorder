@@ -94,13 +94,15 @@ def test_the_window_is_respected():
 # --------------------------------------------------------- recording silently
 
 
-def test_a_typed_value_is_recorded_as_an_entry():
-    assert _guess_action("mouse_click", Suggestion(value="12")) == "enter"
+def test_a_click_is_a_tap_whatever_text_appeared_under_it():
+    """A menu opening shows plenty of new text; none of it was typed. Reading
+    it as a value produced steps like "enter 'Available actions'"."""
+    assert _guess_action("mouse_click", Suggestion(value="Available actions")) == "tap"
 
 
 def test_a_value_that_arrived_on_enter_is_recorded_as_a_scan():
-    # A handheld scanner sends the barcode followed by Enter, which is what
-    # tells a scan apart from someone typing into the same field.
+    # A handheld scanner sends the barcode followed by Enter, and so does
+    # someone typing into a field; on a handheld the scan is the likelier.
     assert _guess_action("enter", Suggestion(value="LP000123")) == "scan"
 
 

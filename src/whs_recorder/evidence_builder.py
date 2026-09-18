@@ -10,6 +10,7 @@ banner, and crops to the app region if the video covers the whole screen.
 import os
 import json
 import datetime
+import shutil
 from typing import Dict, List, Optional
 
 import cv2
@@ -82,6 +83,7 @@ def build_evidence(
     style: str = TASK_GUIDE,
     value_mode: str = PREFERRED,
     include_result: bool = False,
+    document: Optional[str] = None,
 ):
     """Build a Word document from a recording and its screen capture.
 
@@ -89,6 +91,11 @@ def build_evidence(
     exports, `evidence` keeps the action/result pairing this tool started with.
     `value_mode` chooses between the recorded values and "enter a value" wording,
     as Task Recorder's preferred and example value labels do.
+
+    Every build goes into a run folder of its own under `out_dir`, with the
+    pictures and a manifest beside the document, so that no build overwrites
+    another. `document` is for the person who wants one file with a fixed name:
+    the finished document is also placed there, replacing the previous one.
     """
     if style not in STYLES:
         raise ValueError(f"Unknown style {style!r} (expected one of {', '.join(STYLES)})")
@@ -199,6 +206,19 @@ def build_evidence(
     else:
         print(f"Captured {steps} step(s).")
     print("Created:", out_doc)
+
+    if document:
+        ensure_dir(os.path.dirname(os.path.abspath(document)))
+        try:
+            shutil.copyfile(out_doc, document)
+        except OSError as exc:
+            # Word holding the previous copy open is the usual reason. The
+            # build is not lost - it is in the run folder - but say so.
+            raise RuntimeError(
+                f"The document was built but could not be placed at {document}: {exc}. "
+                f"Close it if it is open, then build again. This build is at {out_doc}"
+            ) from exc
+        print("Document:", document)
     return out_doc
 
 

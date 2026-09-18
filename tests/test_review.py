@@ -259,15 +259,80 @@ def test_reading_a_step_that_is_left_out_is_not_an_edit(window):
     assert window.recording.nodes[5].is_loading is True
 
 
-def test_building_hands_the_saved_path_over(recording_path):
-    built = []
-    review = open_window(lambda: Review(recording_path, on_build=built.append))
-    review._show(4)
-    review.fields["control"].set("Licence plate")
-    review._save_and_build()
+def test_saving_tells_the_launcher_so_it_can_remake_the_document(recording_path):
+    saved = []
+    review = open_window(lambda: Review(recording_path, on_saved=saved.append))
+    try:
+        review._show(4)
+        review.fields["control"].set("Licence plate")
+        review._save_clicked()
 
-    assert built == [recording_path]
-    assert Recording.load(recording_path).nodes[4].control == "Licence plate"
+        assert saved == [recording_path]
+        assert Recording.load(recording_path).nodes[4].control == "Licence plate"
+    finally:
+        review.root.destroy()
+
+
+def test_done_saves_and_then_hands_over_for_the_document_to_be_opened(recording_path, monkeypatch):
+    messagebox = pytest.importorskip("tkinter.messagebox")
+
+    saved, closed = [], []
+    monkeypatch.setattr(messagebox, "askyesnocancel", lambda *a, **k: True)
+    review = open_window(
+        lambda: Review(recording_path, on_saved=saved.append, on_closed=closed.append)
+    )
+
+    review._show(4)
+    review.fields["value"].set("LP000999")
+    review._close()
+
+    # Saved once on the way out, without a separate "saved" report: the
+    # launcher builds once, for Done, not twice.
+    assert Recording.load(recording_path).nodes[4].value == "LP000999"
+    assert saved == []
+    assert closed == [recording_path]
+
+
+def test_done_with_nothing_changed_asks_nothing_and_still_hands_over(recording_path, monkeypatch):
+    messagebox = pytest.importorskip("tkinter.messagebox")
+
+    asked = []
+    monkeypatch.setattr(messagebox, "askyesnocancel", lambda *a, **k: asked.append(1))
+    closed = []
+    review = open_window(lambda: Review(recording_path, on_closed=closed.append))
+
+    review._close()
+
+    assert asked == []
+    assert closed == [recording_path]
+
+
+def test_the_button_reads_done_only_when_something_follows_it(recording_path):
+    alone = open_window(lambda: Review(recording_path))
+    try:
+        assert "Close" in _button_texts(alone)
+        assert "Done" not in _button_texts(alone)
+    finally:
+        alone.root.destroy()
+
+    from_launcher = open_window(lambda: Review(recording_path, on_closed=lambda p: None))
+    try:
+        assert "Done" in _button_texts(from_launcher)
+    finally:
+        from_launcher.root.destroy()
+
+
+def _button_texts(review):
+    texts = []
+
+    def walk(widget):
+        for child in widget.winfo_children():
+            if child.winfo_class() == "TButton":
+                texts.append(child.cget("text"))
+            walk(child)
+
+    walk(review.root)
+    return texts
 
 
 # ------------------------------------------------------------ the screenshots

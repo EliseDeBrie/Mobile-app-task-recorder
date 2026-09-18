@@ -12,6 +12,10 @@ throwing those away here is quicker than trying not to make them.
 Edits are kept as soon as you pick another step, so the list can be worked down
 without pressing anything between steps. Nothing touches the file on disk until
 Save.
+
+Opened from the launcher, the document follows the recording: every Save
+remakes it, and closing the window makes it once more and opens it. The window
+itself never builds anything; it reports, and the launcher does the building.
 """
 
 import os
@@ -84,14 +88,20 @@ def lines(recording: Recording):
 class Review:
     """A window for correcting a recording."""
 
-    def __init__(self, path: str, on_build: Optional[Callable[[str], None]] = None):
+    def __init__(
+        self,
+        path: str,
+        on_saved: Optional[Callable[[str], None]] = None,
+        on_closed: Optional[Callable[[str], None]] = None,
+    ):
         import tkinter as tk
         from tkinter import ttk
 
         self.tk, self.ttk = tk, ttk
         self.path = path
         self.recording = Recording.load(path)
-        self.on_build = on_build
+        self.on_saved = on_saved
+        self.on_closed = on_closed
         self.selected = -1
         self.dirty = False
         self.photo = None  # Tk drops an image that nothing holds on to
@@ -215,17 +225,18 @@ class Review:
 
         # ---------------------------------------------------------- the footer
         ttk.Button(footer, text="Save", command=self._save_clicked).pack(side="left")
-        # Opened from the launcher, building is the obvious next thing to do.
-        # Opened on its own there is nothing to hand the recording to, so the
-        # button is left out rather than shown greyed and useless.
-        if self.on_build is not None:
-            ttk.Button(
-                footer, text="Save and build the document", command=self._save_and_build
-            ).pack(side="left", padx=(8, 0))
-        ttk.Button(footer, text="Close", command=self._close).pack(side="right")
+        ttk.Button(
+            footer, text="Done" if self.on_closed is not None else "Close", command=self._close
+        ).pack(side="right")
 
         self.status = tk.StringVar()
         ttk.Label(footer, textvariable=self.status, foreground="#555").pack(side="left", padx=(14, 0))
+        if self.on_closed is not None:
+            ttk.Label(
+                footer,
+                text="Press Done when the steps read right: the document is made and opened.",
+                foreground="#555", font=(family, 9),
+            ).pack(side="right", padx=(0, 14))
 
         self.root.protocol("WM_DELETE_WINDOW", self._close)
 
@@ -422,12 +433,8 @@ class Review:
     def _save_clicked(self) -> None:
         self.save()
         self.status.set(f"Saved. {self._count()}")
-
-    def _save_and_build(self) -> None:
-        self.save()
-        self.root.destroy()
-        if self.on_build is not None:
-            self.on_build(self.path)
+        if self.on_saved is not None:
+            self.on_saved(self.path)
 
     def _close(self) -> None:
         """Closing the window asks about unsaved changes, rather than guessing.
@@ -449,6 +456,8 @@ class Review:
             if answer:
                 self.save()
         self.root.destroy()
+        if self.on_closed is not None:
+            self.on_closed(self.path)
 
     def run(self) -> None:
         if self.owns_root:

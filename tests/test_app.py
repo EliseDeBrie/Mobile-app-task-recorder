@@ -34,17 +34,16 @@ def log_of(app) -> str:
 
 
 def test_recording_hands_the_steps_over_to_be_checked(launcher, recording_path, tmp_path):
-    started = {}
-    launcher._run = lambda args, done, on_success=None: started.update(
-        args=args, done=done, on_success=on_success
-    )
+    runs = _capture_runs(launcher)
     launcher.name.set("Receive a purchase order line")
     launcher.folder.set(str(tmp_path))
 
     launcher._record()
 
-    assert started["args"][0] == "mark"
-    assert started["on_success"] is not None
+    assert runs[0]["args"][0] == "mark"
+    # However the recorder ends, what it saved is looked at.
+    assert runs[0]["on_finish"] is not None
+    assert runs[0]["on_success"] is None
 
 
 def test_checking_the_steps_opens_one_window_not_two(launcher, recording_path):
@@ -81,15 +80,118 @@ def test_checking_a_recording_that_is_not_there_says_so(launcher, tmp_path):
     assert "No recording at" in log_of(launcher)
 
 
-def test_building_from_the_review_window_uses_that_recording(launcher, recording_path):
-    started = {}
-    launcher._run = lambda args, done, on_success=None: started.update(args=args)
+def _capture_runs(launcher):
+    """Stand in for _run, keeping what it was asked to do."""
+    runs = []
 
-    launcher._build_from(recording_path)
+    def fake_run(args, done, on_success=None, on_finish=None):
+        runs.append({"args": args, "done": done, "on_success": on_success, "on_finish": on_finish})
 
-    assert launcher.recording_file.get() == recording_path
-    assert "--markers" in started["args"]
-    assert started["args"][started["args"].index("--markers") + 1] == recording_path
+    launcher._run = fake_run
+    return runs
+
+
+def test_the_document_sits_beside_the_recording_with_the_same_name():
+    from whs_recorder.app import build_folder_for, document_for
+
+    assert document_for(r"C:\rec\Solina inbound.json") == r"C:\rec\Solina inbound.docx"
+    assert build_folder_for(r"C:\rec\Solina inbound.json") == r"C:\rec\Solina inbound_build"
+
+
+def test_a_finished_recording_is_built_and_opened_for_checking(launcher, recording_path):
+    runs = _capture_runs(launcher)
+
+    launcher._after_recording(recording_path, exit_code=0)
+
+    build = runs[0]["args"]
+    assert build[0] == "build"
+    assert build[build.index("--document") + 1].endswith(".docx")
+    assert launcher._review_open() is True
+    launcher.reviewing.root.destroy()
+
+
+def test_a_recorder_that_crashed_after_saving_does_not_cost_the_document(launcher, recording_path):
+    """It saves before anything else on the way out, and it has crashed there."""
+    runs = _capture_runs(launcher)
+
+    launcher._after_recording(recording_path, exit_code=1)
+
+    assert runs and runs[0]["args"][0] == "build"
+    assert "was saved" in log_of(launcher)
+    launcher.reviewing.root.destroy()
+
+
+def test_no_recording_means_nothing_to_build(launcher, tmp_path):
+    runs = _capture_runs(launcher)
+
+    launcher._after_recording(str(tmp_path / "nothing.json"), exit_code=1)
+
+    assert runs == []
+    assert "nothing to build" in log_of(launcher)
+
+
+def test_saving_the_steps_remakes_the_document_quietly(launcher, recording_path):
+    runs = _capture_runs(launcher)
+
+    launcher._steps_saved(recording_path)
+
+    assert runs[0]["args"][0] == "build"
+    assert runs[0]["on_success"] is None  # not opened: the window is still up
+
+
+def test_done_makes_the_document_and_opens_it(launcher, recording_path, monkeypatch):
+    runs = _capture_runs(launcher)
+    opened = []
+    monkeypatch.setattr(launcher, "_open_path", opened.append)
+
+    launcher._steps_done(recording_path)
+    runs[0]["on_success"]()
+
+    assert opened == [os.path.splitext(recording_path)[0] + ".docx"]
+
+
+def test_the_build_button_builds_the_chosen_recording_and_opens_it(launcher, recording_path, monkeypatch):
+    runs = _capture_runs(launcher)
+    opened = []
+    monkeypatch.setattr(launcher, "_open_path", opened.append)
+    launcher.recording_file.set(recording_path)
+
+    launcher._build()
+    runs[0]["on_success"]()
+
+    args = runs[0]["args"]
+    assert args[args.index("--markers") + 1] == recording_path
+    assert opened and opened[0].endswith(".docx")
+
+
+def test_commands_run_one_after_another_not_at_once(launcher, monkeypatch):
+    """Two builds writing the same document at the same time would corrupt it."""
+    started = []
+
+    class FakeProcess:
+        stdout = iter([])
+        returncode = 0
+
+        def wait(self):
+            pass
+
+    def fake_popen(cmd, **kwargs):
+        started.append(cmd[-1])
+        return FakeProcess()
+
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+
+    launcher._run(["check", "first"], "one")
+    launcher._run(["check", "second"], "two")
+    assert started == ["first"]        # the second waits its turn
+    assert len(launcher.waiting) == 1
+
+    import threading
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread() and thread.daemon:
+            thread.join(timeout=2)
+    launcher._drain()                  # the first finishes; the second starts
+    assert started == ["first", "second"]
 
 
 def test_the_command_it_runs_can_find_this_package(monkeypatch):

@@ -15,6 +15,7 @@ A region can be chosen three ways:
 """
 
 import contextlib
+import os
 import re
 import threading
 from dataclasses import dataclass
@@ -149,6 +150,33 @@ def popup_position(
     x = screen_left + gap if centre_x > screen_left + screen_width / 2 else max(screen_right - popup_width - gap, screen_left)
     y = screen_top + gap if centre_y > screen_top + screen_height / 2 else max(screen_bottom - popup_height - gap, screen_top)
     return x, y
+
+
+def use_physical_pixels() -> None:
+    """On Windows, have this process see the screen in physical pixels.
+
+    The capture library works in physical pixels. Tk, in a process that has
+    not declared it understands display scaling, is handed logical ones and
+    scaled up by Windows: on a 125% display the box dragged over the app comes
+    back a quarter too small and too far up and left, and every screenshot is
+    of the wrong part of the screen. Declaring awareness makes Tk report the
+    same pixels the capture uses.
+
+    Only the recorder calls this, and it runs as a process of its own: the
+    launcher window is better off scaled by Windows, and is.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        try:
+            # Per-monitor awareness: right on every screen of a mixed setup.
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except (AttributeError, OSError):
+            ctypes.windll.user32.SetProcessDPIAware()  # Windows before 8.1
+    except Exception:
+        pass  # already declared, or an unexpected Windows: capture as before
 
 
 def open_capture():
@@ -336,6 +364,7 @@ def resolve_region(spec: Optional[str]) -> Optional[Region]:
     if not spec or spec.lower() == "full":
         return None
     if spec.lower() == "select":
+        use_physical_pixels()
         return in_dialog_thread(select_region)
     if spec.lower().startswith("window:"):
         region = region_from_window(spec.split(":", 1)[1])

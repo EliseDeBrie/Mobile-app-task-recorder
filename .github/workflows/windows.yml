@@ -76,6 +76,19 @@ jobs:
             exit 1
           }
 
+      - name: Build a document with the packaged program
+        # A document is what the program is for. python-docx carries a template
+        # that has to be packed in with the executable, and nothing above would
+        # notice if it were not.
+        run: |
+          python packaging\smoke.py smoke
+          & ".\dist\WHS Task Recorder.exe" build --markers smoke\recording.json --out smoke\build --document smoke\guide.docx --skip-loading
+          if (-not (Test-Path smoke\guide.docx)) {
+            Write-Error "The packaged program built no document."
+            exit 1
+          }
+          python -c "import sys, zipfile; media = [n for n in zipfile.ZipFile('smoke/guide.docx').namelist() if n.startswith('word/media/')]; print('pictures in the document:', len(media)); sys.exit(0 if len(media) == 2 else 1)"
+
       - uses: actions/upload-artifact@v7
         with:
           name: WHS-Task-Recorder-windows

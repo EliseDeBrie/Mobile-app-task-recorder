@@ -225,6 +225,20 @@ def test_what_the_screen_says_becomes_the_step():
     )
 
 
+def test_a_tap_keeps_no_value_even_when_the_screen_showed_new_text():
+    screen = FakeScreen(make_screen(seed=0))
+    recording, tracker = tracker_for(
+        screen, SlowWatch(screen),
+        suggest=lambda *_: Suggestion(control="Inbound", value="Available actions"),
+    )
+
+    step = tap(tracker, screen, screen_after_tap(1), now=1.0)
+    tracker.finish()
+
+    assert step.action == "tap"
+    assert step.value == ""
+
+
 def test_the_screen_name_carries_over_to_a_step_that_could_not_read_it():
     screen = FakeScreen(make_screen(seed=0))
     readings = iter([Suggestion(screen="Main menu", control="Inbound"), Suggestion(control="OK")])

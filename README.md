@@ -23,12 +23,17 @@ same kind of task guide, down to how the step sentences are generated. See
    keeping the frame that shows the result banner; your next tap ends that
    watch, so nothing waits on it. A small bar beside the app shows the step
    count and has the stop button on it.
-2. **Check the steps** — the recorded steps open in a list, each with its
-   screenshot. Correct any wording the screen was read wrong, leave out
-   anything that does not belong in the guide, and reorder what is out of
-   place.
-3. **Build** — point the builder at the recording. It redacts the screenshots
-   and writes the Word document.
+2. **The document is made** the moment you stop — a Word file with the same
+   name as the recording, beside it — and the recorded steps open in a list,
+   each with its screenshot. Correct any wording the screen was read wrong,
+   leave out anything that does not belong in the guide, and reorder what is
+   out of place. Saving remakes the document; pressing Done opens it.
+
+What ends up in the folder: `Receive a purchase order line.docx` is the
+document. `Receive a purchase order line.json` is the recording it was made
+from, which 'Check the steps' reopens, and the `_screenshots` and `_build`
+folders beside them hold the pictures. The command line does the same with
+`build --document`.
 
 Because the app is a window on the PC rather than a page in a browser, there is
 no tab for an extension to photograph, which is how Task Recorder gets its
@@ -127,9 +132,14 @@ whs-recorder preview --markers runs/receiving/recording.json
 
 whs-recorder build --markers runs/receiving/recording.json ^
                    --out runs/receiving/guide ^
+                   --document runs/receiving/Receiving.docx ^
                    --redact examples/redaction.sample.json ^
                    --skip-loading
 ```
+
+Each build goes into a run folder of its own under `--out`, with its pictures
+and a manifest, so no build overwrites another; `--document` also places the
+finished document at one fixed name, replacing the previous one.
 
 `mark` opens the region selector first. To skip the drag, name the window with
 `--region "window:Warehouse"` (needs `pip install .[window]`), give coordinates

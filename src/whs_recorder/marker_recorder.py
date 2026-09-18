@@ -349,25 +349,25 @@ def _capture_result(
 def _in_dialog(dialogs, build):
     """Open a dialog from wherever the caller happens to be.
 
-    The bar's buttons are pressed on the dialog thread itself, and asking that
-    thread to wait for its own work would hang it. Called from anywhere else,
-    the request is queued as usual.
+    The bar's buttons are pressed on the thread that owns the windows, and a
+    gesture arrives on a listener thread; `ask` runs the dialog at once for
+    the first and queues it for the second.
     """
-    if threading.current_thread().name == "whs-dialogs":
-        return build(dialogs._root)
     return dialogs.ask(build)
 
 
 def _guess_action(reason: str, suggestion: Suggestion) -> str:
     """Pick the likeliest action for a step nobody was asked about.
 
-    A value appearing where the tap landed means something was typed or
-    scanned into a field; anything else is a tap. Both are easy to correct in
-    the review screen, and a wrong guess there costs a click rather than an
-    interruption.
+    A value counts only when Enter ended the action: a scan ends with Enter,
+    and so does typing into a field. A click never enters a value, whatever
+    text appeared under it - a menu opening shows plenty, and reading that as
+    something the user typed produced steps like "enter 'Available actions'".
+    On a handheld a value that ended with Enter is far more often scanned
+    than typed, and either is one click to correct in the review window.
     """
-    if suggestion.value:
-        return "scan" if reason == "enter" else "enter"
+    if reason == "enter" and suggestion.value:
+        return "scan"
     return "tap"
 
 
@@ -506,10 +506,12 @@ class StepTracker:
                 # for every tap makes a short process a long one, and the
                 # wording is easier to fix afterwards, with the screenshots
                 # to look at.
+                action = _guess_action(reason, suggestion)
                 step = Step(
-                    action=_guess_action(reason, suggestion),
+                    action=action,
                     control=suggestion.control,
-                    value=suggestion.value,
+                    # A tap has no value, whatever text the screen showed.
+                    value=suggestion.value if ACTIONS[action].takes_value else "",
                     screen=suggestion.screen or self.last_screen,
                 )
 
@@ -585,16 +587,24 @@ def run_marker_recorder(
     """Record a task recording for a handheld process."""
     from pynput import keyboard, mouse
 
-    from .region import select_region
+    from .region import select_region, use_physical_pixels
 
     ensure_parent_dir(out_path)
 
-    dialogs = DialogHost().start()
+    # Before any window: the box dragged over the app has to mean the same
+    # pixels to Tk as it does to the screen capture.
+    use_physical_pixels()
+
+    # The windows live on this thread. Tk tears its interpreter down from
+    # whichever thread drops the last reference, and aborts the process if
+    # that is not the thread that made it; keeping the root here, where the
+    # process ends, is what stops every Stop from being a crash.
+    dialogs = DialogHost().open()
 
     if region is None and (region_spec or "").strip().lower() == "select":
         region = dialogs.ask(select_region)
         if region is None:
-            dialogs.stop()
+            dialogs.close()
             raise RuntimeError("No region selected.")
 
     recording = Recording(
@@ -856,9 +866,9 @@ def run_marker_recorder(
     k_listener.start()
     try:
         # Either the button on the bar or the key combination ends the session.
-        while not session.stop.wait(0.2):
-            if not k_listener.running:
-                break
+        # The wait is the window loop itself, which is what runs the popups
+        # the timer threads ask for.
+        dialogs.serve(until=lambda: session.stop.is_set() or not k_listener.running)
     except KeyboardInterrupt:
         pass
     finally:
@@ -880,6 +890,6 @@ def run_marker_recorder(
         tracker.finish()
 
         save_recording()
-        dialogs.stop()
+        dialogs.close()
 
     return recording

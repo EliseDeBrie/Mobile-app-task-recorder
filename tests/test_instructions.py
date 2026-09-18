@@ -103,3 +103,19 @@ def test_value_quoting(value, expected):
 def test_sentences_are_capitalised_and_terminated():
     assert render_instruction("tap", "post") == "Tap post."
     assert render_instruction("tap", "Post", user_text="check the label first") == "Check the label first."
+
+
+def test_a_value_step_without_a_control_name_still_reads_as_a_sentence():
+    """The fallback produced "In the the control field, enter 'X'."."""
+    assert render_instruction("enter", "", "12") == "Enter '12'."
+    assert render_instruction("scan", "", "LP000123") == "Scan 'LP000123'."
+    assert render_instruction("check", "", "true") == "Select the check box."
+
+
+def test_a_value_step_without_a_control_name_in_example_mode():
+    assert render_instruction("enter", "", "12", value_mode=EXAMPLE) == "Enter the value."
+    assert render_instruction("scan", "", "LP1", value_mode=EXAMPLE) == "Scan the value from the label."
+
+
+def test_an_explicit_label_still_wins_without_a_control_name():
+    assert render_instruction("scan", "", "LP1", instruction_label="Scan %2 twice.") == "Scan 'LP1' twice."
