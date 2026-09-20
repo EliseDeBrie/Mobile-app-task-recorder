@@ -153,8 +153,9 @@ jobs:
             Write-Error "No Store package came out."
             exit 1
           }
-          # An .msix is a zip. The program and the manifest have to be in it.
-          python -c "import sys, zipfile; names = zipfile.ZipFile('dist/msix/WHS Task Recorder.msix').namelist(); print(len(names), 'files'); sys.exit(0 if 'AppxManifest.xml' in names and 'app/WHS Task Recorder.exe' in names else 1)"
+          # An .msix is a zip, with backslashes in its names. The program and
+          # the manifest have to be in it.
+          python -c "import sys, zipfile; names = [n.replace(chr(92), '/') for n in zipfile.ZipFile('dist/msix/WHS Task Recorder.msix').namelist()]; print(len(names), 'files'); sys.exit(0 if 'AppxManifest.xml' in names and 'app/WHS Task Recorder.exe' in names else 1)"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
