@@ -44,6 +44,15 @@ PLACEHOLDERS = {
     "MSIX_PUBLISHER_DISPLAY_NAME": "Placeholder",
 }
 
+#: File names the package format keeps for itself. A package is an OPC
+#: container, the same format as a .docx, and these names are its own parts;
+#: makeappx refuses a payload file called the same ("0x8007007b, the filename
+#: syntax is incorrect", after listing every file). python-docx ships an
+#: unpacked copy of its default document, with the [Content_Types].xml every
+#: .docx has, which it does not read at runtime: the packed default.docx
+#: beside it is what Document() opens.
+RESERVED_NAMES = {"[content_types].xml", "appxmanifest.xml", "appxblockmap.xml", "appxsignature.p7x"}
+
 #: The pictures the manifest names, at the sizes Windows asks for them.
 ASSETS = {
     "StoreLogo.png": 50,
@@ -96,6 +105,19 @@ def write_assets(layout: str) -> None:
         draw(size).save(os.path.join(folder, name), format="PNG")
 
 
+def drop_reserved_names(folder: str) -> list:
+    """Remove payload files whose name the package format reserves, and
+    return their paths relative to `folder`."""
+    dropped = []
+    for root, _dirs, files in os.walk(folder):
+        for name in files:
+            if name.lower() in RESERVED_NAMES:
+                path = os.path.join(root, name)
+                os.remove(path)
+                dropped.append(os.path.relpath(path, folder))
+    return sorted(dropped)
+
+
 def find_makeappx() -> str:
     """makeappx.exe from the newest Windows SDK on the machine, or ''."""
     if os.environ.get("MAKEAPPX"):
@@ -124,6 +146,8 @@ def lay_out(dist: str, out: str) -> str:
     if os.path.isdir(layout):
         shutil.rmtree(layout)
     shutil.copytree(dist, os.path.join(layout, "app"))
+    for dropped in drop_reserved_names(os.path.join(layout, "app")):
+        print(f"  left out {dropped}: the package format keeps that name for itself")
     write_assets(layout)
     version = package_version()
     values = identity()
@@ -145,7 +169,10 @@ def pack(layout: str, out: str) -> str:
             "makeappx.exe was not found. It comes with the Windows SDK; on a machine "
             "without it, run with --no-pack and keep the layout."
         )
-    package = os.path.join(out, "WHS Task Recorder.msix")
+    # Absolute, both of them: makeappx prefixes its paths with \\?\ and
+    # a relative one comes out as a name Windows calls invalid (0x8007007b).
+    layout = os.path.abspath(layout)
+    package = os.path.abspath(os.path.join(out, "WHS Task Recorder.msix"))
     if os.path.exists(package):
         os.remove(package)
     # /o overwrites. makeappx checks the manifest against its schema and that
