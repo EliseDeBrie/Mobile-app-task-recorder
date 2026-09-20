@@ -156,9 +156,11 @@ class Recording:
             return relative
         folder = os.path.realpath(os.path.dirname(os.path.abspath(self.source_path)))
         path = os.path.realpath(os.path.join(folder, relative))
-        if os.path.commonpath([folder, path]) != folder:
-            return ""
-        return path
+        try:
+            inside = os.path.commonpath([folder, path]) == folder
+        except ValueError:  # another drive on Windows: nowhere near the folder
+            inside = False
+        return path if inside else ""
 
     @property
     def has_screenshots(self) -> bool:
