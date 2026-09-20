@@ -44,13 +44,26 @@ PLACEHOLDERS = {
     "MSIX_PUBLISHER_DISPLAY_NAME": "Placeholder",
 }
 
-#: File names the package format keeps for itself. A package is an OPC
-#: container, the same format as a .docx, and these names are its own parts;
-#: makeappx refuses a payload file called the same ("0x8007007b, the filename
-#: syntax is incorrect", after listing every file). python-docx ships an
-#: unpacked copy of its default document, with the [Content_Types].xml every
-#: .docx has, which it does not read at runtime: the packed default.docx
-#: beside it is what Document() opens.
+#: Folders the program carries but the package cannot, or need not, hold.
+#: Relative to the program folder.
+#:
+#: A package is an OPC container, the same format as a .docx, and makeappx
+#: refuses payload files that read as the container's own parts:
+#: [Content_Types].xml and the _rels\.rels relationship parts. It says
+#: "0x8007007b, the filename syntax is incorrect" after listing every file,
+#: which names nothing. python-docx ships an unpacked copy of its default
+#: document, full of exactly those, and does not read it at runtime: the
+#: packed default.docx beside it is what Document() opens.
+#:
+#: Tcl's timezone tables are 600 files the windows never use, and their
+#: names carry a "+" (GMT+10), which is one more thing for a package to
+#: object to.
+LEFT_OUT = (
+    os.path.join("_internal", "docx", "templates", "default-docx-template"),
+    os.path.join("_internal", "_tcl_data", "tzdata"),
+)
+
+#: File names the package format keeps for itself, wherever they are.
 RESERVED_NAMES = {"[content_types].xml", "appxmanifest.xml", "appxblockmap.xml", "appxsignature.p7x"}
 
 #: The pictures the manifest names, at the sizes Windows asks for them.
@@ -111,7 +124,7 @@ def drop_reserved_names(folder: str) -> list:
     dropped = []
     for root, _dirs, files in os.walk(folder):
         for name in files:
-            if name.lower() in RESERVED_NAMES:
+            if name.lower() in RESERVED_NAMES or name.lower().endswith(".rels"):
                 path = os.path.join(root, name)
                 os.remove(path)
                 dropped.append(os.path.relpath(path, folder))
@@ -146,7 +159,12 @@ def lay_out(dist: str, out: str) -> str:
     if os.path.isdir(layout):
         shutil.rmtree(layout)
     shutil.copytree(dist, os.path.join(layout, "app"))
-    for dropped in drop_reserved_names(os.path.join(layout, "app")):
+    app = os.path.join(layout, "app")
+    for folder in LEFT_OUT:
+        if os.path.isdir(os.path.join(app, folder)):
+            shutil.rmtree(os.path.join(app, folder))
+            print(f"  left out {folder}\\ (see LEFT_OUT)")
+    for dropped in drop_reserved_names(app):
         print(f"  left out {dropped}: the package format keeps that name for itself")
     write_assets(layout)
     version = package_version()
