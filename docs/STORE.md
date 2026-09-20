@@ -57,9 +57,10 @@ enough to try out locally; the Store will reject it, by design.
    | Package/Identity/Publisher | `MSIX_PUBLISHER` |
    | Publisher display name | `MSIX_PUBLISHER_DISPLAY_NAME` |
 
-   If the reserved name differs from "WHS Task Recorder", change the
-   `DisplayName` values in `packaging/msix/AppxManifest.xml` to match it: the
-   Store checks that the name in the package is one you reserved.
+   The Store checks that the name in the package is one you reserved. The
+   reserved name is **Warehouse Step Recorder**, and that is what the two
+   `DisplayName` values in `packaging/msix/AppxManifest.xml` say; the
+   program's own file name inside the package stays `WHS Task Recorder.exe`.
 
 4. **Build.** Push, or run the workflow by hand. Download
    `WHS Task Recorder.msix` from the run's artifacts, or from the release.

@@ -21,9 +21,9 @@
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>WHS Task Recorder</DisplayName>
+    <DisplayName>Warehouse Step Recorder</DisplayName>
     <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
-    <Description>Records the Warehouse Management mobile app on a PC and writes a Task Recorder-style Word guide, with a screenshot per step. Everything stays on the machine.</Description>
+    <Description>Records the Warehouse Management mobile app on a PC and writes a step-by-step Word guide, with a screenshot per step. Everything stays on the machine.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -51,8 +51,8 @@
       uap10:RuntimeBehavior="packagedClassicApp"
       uap10:TrustLevel="mediumIL">
       <uap:VisualElements
-        DisplayName="WHS Task Recorder"
-        Description="Task Recorder-style guides for the Warehouse Management mobile app."
+        DisplayName="Warehouse Step Recorder"
+        Description="Step-by-step Word guides for the Warehouse Management mobile app."
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
         BackgroundColor="#1F3864" />
