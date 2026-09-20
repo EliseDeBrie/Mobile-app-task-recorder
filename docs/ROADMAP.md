@@ -63,9 +63,15 @@
 - `review` command, and the same window opening by itself when a recording finishes
 - `--ask-each-step` for anyone who would rather name each step as they take it
 
+## v0.9.4 — done
+- A Store package (MSIX) built by CI beside the `.exe`, so the program can be published where it is signed for free
+- Screenshot paths in a recording confined to the recording's own folder
+- Pinned build dependencies, a vulnerability audit on every CI run, Dependabot, and actions pinned by commit
+- A privacy policy that says everything the program does, and a security page
+
 ## v0.10
 - Template customization (house styles, cover page)
-- Signing the executable, so Windows stops warning about it
+- Listing on the Store, once the app name is reserved (see docs/STORE.md)
 
 ## Future
 - Batch processing

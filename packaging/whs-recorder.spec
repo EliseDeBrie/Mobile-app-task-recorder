@@ -1,9 +1,21 @@
-# PyInstaller build: one file, no Python install needed on the machine.
+# PyInstaller build: no Python install needed on the machine.
 #
 # Built as a windowed application: double-clicking it opens the launcher with
 # no console at all. Run as a command it attaches to the terminal it was
 # started from, and the commands the launcher runs for itself are handed pipes,
 # so their output still reaches the log pane.
+#
+# Two shapes come out of the same spec:
+#
+#   pyinstaller packaging/whs-recorder.spec
+#       One file, "dist/WHS Task Recorder.exe", for the Releases page. It
+#       unpacks itself into a temporary folder each time it starts.
+#
+#   WHS_BUILD=folder pyinstaller packaging/whs-recorder.spec
+#       One folder, "dist/WHS Task Recorder/", with the program and its
+#       libraries laid out as files. This is what the MSIX package is made
+#       from (see make_msix.py): an installed app runs from where it was
+#       installed and unpacks nothing.
 
 from PyInstaller.utils.hooks import collect_submodules
 
@@ -59,18 +71,14 @@ analysis = Analysis(
 
 pyz = PYZ(analysis.pure)
 
-exe = EXE(
-    pyz,
-    analysis.scripts,
-    analysis.binaries,
-    analysis.datas,
-    [],
+as_folder = os.environ.get("WHS_BUILD", "").lower() == "folder"
+
+exe_options = dict(
     name="WHS Task Recorder",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    runtime_tmpdir=None,
     # Windowed: double-clicking opens the launcher and never a console.
     # Run as a command, it attaches to the terminal it was started from.
     console=False,
@@ -79,3 +87,30 @@ exe = EXE(
     # feather and tells a user nothing about what they just downloaded.
     icon=os.path.join(SPECPATH, "whs-recorder.ico"),
 )
+
+if as_folder:
+    exe = EXE(
+        pyz,
+        analysis.scripts,
+        [],
+        exclude_binaries=True,
+        **exe_options,
+    )
+    COLLECT(
+        exe,
+        analysis.binaries,
+        analysis.datas,
+        strip=False,
+        upx=False,
+        name="WHS Task Recorder",
+    )
+else:
+    exe = EXE(
+        pyz,
+        analysis.scripts,
+        analysis.binaries,
+        analysis.datas,
+        [],
+        runtime_tmpdir=None,
+        **exe_options,
+    )

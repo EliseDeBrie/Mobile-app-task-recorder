@@ -77,6 +77,18 @@ Windows warns that a downloaded program is unsigned the first time you run it.
 Choose **More info**, then **Run anyway**. Signing the program would remove that
 warning and costs a certificate; until then the warning is expected.
 
+The same release also carries **WHS Task Recorder.msix**, the program as a
+Store package. The Store signs what it publishes, so that is the route to an
+install without the warning, at no cost; [docs/STORE.md](docs/STORE.md) has the
+steps. The package is unsigned until the Store signs it, so on its own it is
+for trying out (`Add-AppxPackage -AllowUnsigned`), not for handing round.
+
+What the program does on your machine, in full, is in
+[docs/PRIVACY.md](docs/PRIVACY.md); what a security desk will want to know is
+in [docs/SECURITY.md](docs/SECURITY.md). The short version: one screen region
+is captured while recording, clicks and the Enter key are listened for so that
+steps are noticed, no key text is kept, and nothing ever leaves the machine.
+
 ### Installing from source instead
 
 For working on the tool, or running it from a checkout:

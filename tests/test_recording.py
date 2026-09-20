@@ -1,3 +1,4 @@
+import os
 import json
 
 import pytest
@@ -243,3 +244,44 @@ def test_moving_past_either_end_stops_at_the_end():
     assert r.move(0, -3) == 0
     assert r.move(1, 9) == 1
     assert [n.control for n in r.nodes] == ["one", "two"]
+
+
+# ------------------------------------------------------------ screenshot paths
+
+
+def test_screenshot_paths_are_read_from_beside_the_recording(tmp_path):
+    r = Recording()
+    r.save(str(tmp_path / "rec.json"))
+
+    assert r.image_path("rec_screenshots/step_01_action.png") == os.path.realpath(
+        str(tmp_path / "rec_screenshots" / "step_01_action.png")
+    )
+    assert r.image_path("") == ""
+
+
+def test_a_recording_cannot_point_at_pictures_outside_its_own_folder(tmp_path):
+    """A recording.json can come from anyone. Whatever paths it carries, the
+    pictures it puts in a document come from its own folder and nowhere else."""
+    (tmp_path / "private").mkdir()
+    (tmp_path / "private" / "secret.png").write_bytes(b"")
+    folder = tmp_path / "shared"
+    folder.mkdir()
+    r = Recording()
+    r.save(str(folder / "rec.json"))
+
+    assert r.image_path("../private/secret.png") == ""
+    assert r.image_path(str(tmp_path / "private" / "secret.png")) == ""
+    assert r.image_path(os.path.abspath(os.sep)) == ""
+
+
+def test_an_absolute_path_inside_the_folder_is_still_honoured(tmp_path):
+    r = Recording()
+    r.save(str(tmp_path / "rec.json"))
+
+    assert r.image_path(str(tmp_path / "shot.png")) == os.path.realpath(str(tmp_path / "shot.png"))
+
+
+def test_an_unsaved_recording_keeps_its_paths_as_they_are():
+    r = Recording()
+
+    assert r.image_path("shots/step1.png") == "shots/step1.png"

@@ -140,12 +140,25 @@ class Recording:
     source_path: str = ""
 
     def image_path(self, relative: str) -> str:
-        """Resolve a screenshot path recorded relative to the recording file."""
+        """Resolve a screenshot path recorded relative to the recording file.
+
+        A recording is a JSON file that may have come from someone else, and
+        the paths in it are the only thing that decides which pictures end up
+        in the document. So a path is only honoured when it stays inside the
+        recording's own folder: `../../Users/me/Pictures/private.png` or an
+        absolute path elsewhere is treated as a missing screenshot, not read
+        and embedded. A recording that was never saved has no folder and its
+        paths are taken as they are.
+        """
         if not relative:
             return ""
-        if os.path.isabs(relative) or not self.source_path:
+        if not self.source_path:
             return relative
-        return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(self.source_path)), relative))
+        folder = os.path.realpath(os.path.dirname(os.path.abspath(self.source_path)))
+        path = os.path.realpath(os.path.join(folder, relative))
+        if os.path.commonpath([folder, path]) != folder:
+            return ""
+        return path
 
     @property
     def has_screenshots(self) -> bool:

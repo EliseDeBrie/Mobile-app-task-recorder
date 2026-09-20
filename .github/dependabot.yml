@@ -1,0 +1,16 @@
+# Free, and the cheapest way to hear about a vulnerable dependency: Dependabot
+# opens a pull request when one of the pinned versions below has a fix, and
+# when one of the actions the workflow runs moves on.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: pip
+    directory: /packaging
+    schedule:
+      interval: monthly
+    groups:
+      build-dependencies:
+        patterns: ["*"]
