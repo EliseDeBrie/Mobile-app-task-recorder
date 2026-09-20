@@ -1,0 +1,27 @@
+# The versions the released program is built with.
+#
+# pyproject.toml says what the program needs; this file says exactly which
+# versions CI packs into the .exe and the Store package, so a build can be
+# repeated, and so that the audit in the workflow and Dependabot's updates
+# speak about one known set rather than whatever pip resolved that day.
+# Nothing here is installed on a user's machine: the packaged program carries
+# its own copies.
+#
+# Move a pin on purpose, run the tests, and let CI's audit have a look.
+opencv-python==5.0.0.93
+numpy==2.5.3
+python-docx==1.2.0
+lxml==6.1.3
+typing-extensions==4.16.0
+pynput==1.8.2
+six==1.17.0
+mss==10.2.0
+pygetwindow==0.0.9
+pyrect==0.2.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.7
+altgraph==0.17.5
+pefile==2024.8.26
+pywin32-ctypes==0.2.3
+packaging==26.3
+pillow==12.3.0

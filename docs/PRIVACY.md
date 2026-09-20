@@ -1,9 +1,54 @@
 # Privacy and redaction
 
-Evidence recordings of WHS mobile processes routinely capture things a test
-document should not carry: the signed-in worker, badge numbers, licence plates,
-customer names on a pick list. This page describes what the tool stores and how
-to keep that material out of the generated document.
+This page is the privacy policy for WHS Task Recorder. The first part says what
+the program does on your machine, in full. The rest is about the recordings
+themselves: they routinely capture things a test document should not carry -
+the signed-in worker, badge numbers, licence plates, customer names on a pick
+list - and this page describes how to keep that material out of the generated
+document.
+
+## What the program does on your machine
+
+WHS Task Recorder is an independent tool, published by its author on GitHub at
+[github.com/EliseDeBrie/Mobile-app-task-recorder](https://github.com/EliseDeBrie/Mobile-app-task-recorder).
+It is not affiliated with the vendors of the products it works alongside.
+
+**Nothing leaves your machine.** The program has no network code. It does not
+sign you in, does not phone home, sends no telemetry, no crash reports and no
+usage figures, and never uploads a screenshot, a recording or a document. The
+only way anything it made reaches another machine is you sending the file.
+
+**What it captures, and when.** While a recording is running, and only then:
+
+* It takes pictures of one rectangle of the screen - the one you drew around
+  the warehouse app when the recording started. Nothing outside that rectangle
+  is ever captured: not the rest of the desktop, not other windows, not a
+  second monitor.
+* It listens for mouse clicks and for a few keys, through the ordinary Windows
+  input hooks, so that it knows when you tapped the app and when you pressed
+  Enter. Only the position of a click and whether Enter, Ctrl or Shift is down
+  are used. What you type is not recorded: no key text, no values, no
+  passwords. What appears *on the screen* after you type is in the screenshot,
+  which is why the redaction rules below exist.
+* It reads the text on those screenshots with OCR to write the step sentences.
+  That runs on your machine - the engine built into Windows, or a local copy of
+  Tesseract - and nothing is sent anywhere to be read.
+
+Press Stop and all of it stops. The program does not run in the background,
+does not start with Windows and has no service.
+
+**Where it writes.** Everything goes into the folder you chose in the launcher
+(by default `Documents\WHS recordings`): the recording (`.json`), its
+screenshots, the build folder and the Word document. The program keeps no
+settings, no history and no copy of anything elsewhere. Delete the folder and
+nothing of the recording remains.
+
+**No account, no age gate, no advertising, no third parties.** There is nothing
+to sign up for and nobody the program talks to. If you installed it from a
+store, that store's own terms cover what the store records about the download;
+the program itself adds nothing to that.
+
+**Questions** go to the repository's issue tracker at the address above.
 
 ## What the tool stores
 
@@ -12,7 +57,7 @@ and no network call in any code path.
 
 | Artefact | Written by | Contains |
 | --- | --- | --- |
-| the recording JSON | `whs-recorder mark` | Timestamps, the screen, action, control and value of each step, your titles and notes, the screen region being watched, and the screen-change score. No pixels. |
+| the recording JSON | `whs-recorder mark` | Timestamps, the screen, action, control and value of each step, your titles and notes, the screen region being watched, and the screen-change score. No pixels. The screenshot names in it are read from the recording's own folder and nowhere else. |
 | `<recording>_screenshots/*.png` | `whs-recorder mark` | The screenshots captured from the app region as you record. |
 | `run_<stamp>/step_*.jpg` | `whs-recorder build` | The screenshots, after redaction. |
 | `run_<stamp>/steps.json` | `whs-recorder build` | The per-step manifest: generated instructions, titles, notes, the screenshot file names, which rules were applied. |

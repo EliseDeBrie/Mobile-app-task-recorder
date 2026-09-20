@@ -3,6 +3,11 @@ name: Windows
 # The tool runs on Windows and nowhere else, so that is where it is tested and
 # built. A Windows OCR call that was wrong for the installed packages reached a
 # user once; a test run on a real Windows machine is how that stops happening.
+#
+# Each action below is pinned to the commit its version tag pointed at when it
+# was checked, not to the tag: a tag can be moved to other code, a commit
+# cannot. Dependabot (.github/dependabot.yml) opens a pull request when a
+# newer one is out, and updates the comment with it.
 
 on:
   push:
@@ -17,20 +22,31 @@ on:
         type: boolean
         default: false
 
+# The token can read the repository and nothing more, except where a job says
+# otherwise below.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
       - name: Install the tool and its test extras
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install ".[dev,ocr-windows,window]"
+          python -m pip install --upgrade pip setuptools
+          python -m pip install -c packaging/constraints.txt ".[dev,ocr-windows,window]" pip-audit
+
+      - name: Check the installed packages against the vulnerability databases
+        # Free, and the same check a Store or a corporate desk would run on the
+        # package. A finding here fails the build until the pin in
+        # packaging/constraints.txt is moved to a fixed version.
+        run: python -m pip_audit --progress-spinner off
 
       - name: Run the tests
         run: python -m pytest -q
@@ -47,16 +63,18 @@ jobs:
       # integration" from the releases API and the tag produces nothing.
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
       - name: Install the tool, its OCR engine and PyInstaller
+        # Pinned to packaging/constraints.txt, so a release is built from a
+        # known set of versions and can be built again.
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install ".[ocr-windows,window]" pyinstaller
+          python -m pip install --upgrade pip setuptools
+          python -m pip install -c packaging/constraints.txt ".[ocr-windows,window]" pyinstaller pillow
 
       - name: Build the executable
         run: pyinstaller --noconfirm --clean packaging/whs-recorder.spec
@@ -93,10 +111,56 @@ jobs:
           }
           python -c "import sys, zipfile; media = [n for n in zipfile.ZipFile('smoke/guide.docx').namelist() if n.startswith('word/media/')]; print('pictures in the document:', len(media)); sys.exit(0 if len(media) == 2 else 1)"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: WHS-Task-Recorder-windows
           path: dist/WHS Task Recorder.exe
+          if-no-files-found: error
+
+      # ---------------------------------------------------- the Store package
+      # The Store signs what it publishes, so this is the build that needs no
+      # certificate. It is the same program laid out as a folder, packed with
+      # the manifest in packaging/msix. The identity comes from repository
+      # variables (Settings > Secrets and variables > Actions > Variables),
+      # copied from Partner Center once the app's name is reserved; until
+      # they are set the package carries placeholders and is for trying out,
+      # not for uploading. See docs/STORE.md.
+
+      - name: Build the program as a folder
+        env:
+          WHS_BUILD: folder
+        run: pyinstaller --noconfirm --clean --distpath dist-folder packaging/whs-recorder.spec
+
+      - name: Confirm the folder build runs
+        run: |
+          $version = & ".\dist-folder\WHS Task Recorder\WHS Task Recorder.exe" --version | Out-String
+          Write-Host $version
+          if ($version -notmatch 'whs-recorder \d') {
+            Write-Error "The folder build does not start."
+            exit 1
+          }
+
+      - name: Pack the Store package
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: python packaging\make_msix.py --dist "dist-folder\WHS Task Recorder" --out dist\msix
+
+      - name: Confirm the package holds the program and a valid manifest
+        run: |
+          if (-not (Test-Path "dist\msix\WHS Task Recorder.msix")) {
+            Write-Error "No Store package came out."
+            exit 1
+          }
+          # An .msix is a zip whose names are URL-encoded ("WHS%20Task"). The
+          # program and the manifest have to be in it.
+          python -c "import sys, zipfile, urllib.parse; names = [urllib.parse.unquote(n).replace(chr(92), '/') for n in zipfile.ZipFile('dist/msix/WHS Task Recorder.msix').namelist()]; print(len(names), 'files'); print([n for n in names if n.count('/') == 0 or n.startswith('app/W')]); sys.exit(0 if 'AppxManifest.xml' in names and 'app/WHS Task Recorder.exe' in names else 1)"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: WHS-Task-Recorder-msix
+          path: dist/msix/WHS Task Recorder.msix
           if-no-files-found: error
 
       - name: Read the version being released
@@ -111,11 +175,13 @@ jobs:
       # where tags cannot be pushed.
       - name: Attach it to the release
         if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
-          files: dist/WHS Task Recorder.exe
+          files: |
+            dist/WHS Task Recorder.exe
+            dist/msix/WHS Task Recorder.msix
           body: |
             Download **WHS.Task.Recorder.exe** from the Assets list below and
             run it. Nothing else to install: no Python, no packages, no
@@ -123,3 +189,7 @@ jobs:
 
             Windows will warn that the file is unsigned the first time. Choose
             **More info**, then **Run anyway**.
+
+            The **.msix** beside it is the same program as a Store package. It
+            is unsigned, so it is for the Store upload and for trying out
+            (`Add-AppxPackage -AllowUnsigned`), not for installing by hand.
